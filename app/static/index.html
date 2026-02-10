@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Hyperscaler Digital Twin</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Hyperscaler Data Center – Digital Twin (Twin.js + iTwin.js)</h1>
+      <p id="api-status">Live-Daten aktiv über Python Data Pipeline.</p>
+    </header>
+    <main>
+      <section class="grid metrics">
+        <article class="card"><h2>IT-Load</h2><p class="value" id="it-load">--</p></article>
+        <article class="card"><h2>Facility-Load</h2><p class="value" id="facility-load">--</p></article>
+        <article class="card"><h2>Renewable</h2><p class="value" id="renewable">--</p></article>
+        <article class="card"><h2>Coverage</h2><p class="value" id="coverage">--</p><div class="progress"><div id="renewable-fill"></div></div></article>
+      </section>
+      <section class="grid">
+        <article class="card"><h2>Wetter</h2><p id="weather">--</p></article>
+        <article class="card"><h2>Grid Signal</h2><p id="grid">--</p></article>
+        <article class="card"><h2>Letztes Update</h2><p id="last-update">--</p></article>
+      </section>
+
+
+      <section>
+        <h2>iTwin.js Topology View</h2>
+        <article class="card">
+          <canvas id="itwin-topology" width="720" height="320" aria-label="iTwin topology"></canvas>
+        </article>
+      </section>
+
+      <section>
+        <h2>Data Halls & Racks</h2>
+        <div id="halls"></div>
+      </section>
+      <footer>
+        Telemetrie-Endpunkte: <code>POST /api/v1/telemetry</code>, <code>POST /api/v1/telemetry/bulk</code>, <code>GET /api/v1/state</code>
+      </footer>
+    </main>
+
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>
