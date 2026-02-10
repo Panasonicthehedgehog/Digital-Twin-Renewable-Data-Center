@@ -31,6 +31,7 @@ iTwin.js - https://www.itwinjs.org/
 | -------------- | ------------------- |
 | Weather        | ERA5                |
 ## Pipeline 
+Workflows orchestrated via n8n and distributed e.g. via Event Driven Architecture (Kafka, RabbitMQ). 
 
 ## Interface 
 | Layer          | Tool                |
