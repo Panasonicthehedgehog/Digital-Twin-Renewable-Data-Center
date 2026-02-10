@@ -1,0 +1,30 @@
+topology:
+  blocks: 2
+  halls_per_block: 2
+  racks_per_hall: 8
+  servers_per_rack: 32
+load:
+  ai_intensity: 0.72
+  base_server_kw: 0.45
+  training_burst_multiplier: 1.45
+  cooling_cop: 3.4
+  infrastructure_overhead_ratio: 0.08
+energy:
+  grid_capacity_kw: 16000
+  grid_curtailment_factor: 1.0
+  solar_capacity_kw: 7000
+  wind_capacity_kw: 5000
+  battery_capacity_kwh: 12000
+  battery_max_power_kw: 6000
+  battery_initial_soc: 0.65
+  hydrogen_capacity_kwh: 25000
+  hydrogen_max_discharge_kw: 3500
+  hydrogen_roundtrip_efficiency: 0.45
+weather:
+  latitude: 52.52
+  longitude: 13.405
+  timezone: UTC
+  seed: 42
+simulation:
+  timestep_minutes: 15
+  deterministic_mode: true

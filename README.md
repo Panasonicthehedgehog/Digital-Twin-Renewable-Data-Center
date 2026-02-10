@@ -1,76 +1,102 @@
-# Digital-Twin-Renewable-Data-Center ♻️
+# Hyperscale AI Data Center Digital Twin
 
-Dieses Repository enthält nun einen lauffähigen, detaillierten **Digital Twin eines Hyperscaler Data Centers** mit:
+Research-oriented, out-of-the-box digital twin for hyperscaler AI data centers.
 
-- **Twin.js Modellschicht** (Halls, Racks, Renewables, Batteries, Weather, Grid)
-- **Python Data Pipeline API** (FastAPI) zum Laden von Telemetrie
-- **Web-Dashboard** zur Visualisierung des Live-Zustands
-- **iTwin.js-basierte Topology-View** (über `@itwin/core-geometry`) für eine 3D-ähnliche Hall-Darstellung
+## What this system models
 
-## Architektur
+- Hierarchical infrastructure: **Server → Rack → Hall → Block → Data Center**
+- Dynamic AI IT load and cooling/infrastructure overhead
+- Energy portfolio: grid, PV, wind, battery, hydrogen bridge
+- Configurable weather and stress scenarios (heatwave, dunkelflaute, grid restriction, load spikes)
+- Explicit operational limits with failure detection and hydrogen resilience visibility
 
-- `app/static/twin.js`  
-  Modelllogik des Twins (Objekte + Aggregationen wie IT-Load, Facility-Load, Renewable-Coverage)
-- `app/main.py`  
-  FastAPI-Endpunkte + In-Memory Twin-State-Store
-- `app/static/index.html`, `app/static/app.js`, `app/static/styles.css`, `app/static/itwin-topology.js`  
-  UI für Betriebsstatus, Hall/Rack-Details, Energieabdeckung und iTwin.js-Topology-Visualisierung
-- `scripts/load_pipeline_data.py`  
-  Python-Loader für JSON, JSONL/NDJSON und CSV
+## Repository layout
 
-## Schnellstart
+```text
+backend/
+  app.py                 # FastAPI app (REST + WebSocket)
+  twin/
+    config.py            # Pydantic config schema + YAML IO
+    core.py              # Simulation engine, hierarchy aggregation, energy balance
+config/
+  default_config.yaml    # Runtime-editable deployment config
+frontend/
+  index.html
+  package.json
+  src/main.js            # Browser dashboard + controls + websocket client
+  src/styles.css
+main.py                  # One-command backend launcher (python main.py)
+tests/test_api.py
+```
 
+## Architecture
+
+### 1) Twin Core (Python)
+- Deterministic step simulation (`timestep_minutes`)
+- Explainable calculations for:
+  - IT load (server count × utilization)
+  - Cooling load (COP + ambient temperature impact)
+  - Infrastructure overhead
+  - Renewable generation (solar + wind weather-dependent)
+  - Dispatch order: renewables → battery → hydrogen bridge → grid → unmet load
+- Scenario engine with reproducible stress events
+- Hierarchical aggregation for visualization heatmaps
+
+### 2) API Layer
+- REST endpoints:
+  - `GET /api/state`
+  - `GET /api/scenarios`
+  - `POST /api/scenario`
+  - `POST /api/simulate`
+  - `GET /api/config`
+  - `PUT /api/config`
+- WebSocket stream:
+  - `ws://localhost:8000/ws/state`
+
+### 3) Frontend
+- Browser app (Vite, no Electron)
+- Live stress KPIs and pseudo-3D rack heatmap
+- Weather overlay, energy flow panel, failure status
+- Control panel for scenario selection and runtime config updates
+
+## Run locally
+
+### Backend
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+python main.py
 ```
 
-Dann im Browser öffnen:
-
-- `http://localhost:8000` (Dashboard)
-- `http://localhost:8000/api/v1/state` (aktueller Twin-State)
-
-## Data Pipeline Zugänge
-
-### 1) Einzel-Event senden
-
+### Frontend
 ```bash
-curl -X POST http://localhost:8000/api/v1/telemetry \
-  -H "Content-Type: application/json" \
-  -d '{
-    "weather": {"ambientTempC": 31.5, "ghiWm2": 950},
-    "halls": [{"id": "hall-a", "racks": [{"id": "a-r1", "cpuUtilization": 0.89}]}]
-  }'
+cd frontend
+npm install
+npm run dev
 ```
 
-### 2) Bulk-Ingestion senden
+Open `http://localhost:5173`.
 
-```bash
-curl -X POST http://localhost:8000/api/v1/telemetry/bulk \
-  -H "Content-Type: application/json" \
-  -d '[
-    {"grid": {"priceEurPerMwh": 185}},
-    {"renewables": [{"id": "solar-west", "outputKw": 17250}]}
-  ]'
-```
+## Configuration
 
-### 3) Python Loader verwenden
+Primary configuration file: `config/default_config.yaml`.
 
-Mit Beispiel-Datei:
+All core parameters are editable at runtime through:
+1. **YAML config** (`/api/config` load/save path)
+2. **Frontend control panel** (AI intensity, grid capacity, hydrogen size; extensible)
 
-```bash
-python scripts/load_pipeline_data.py data/sample_telemetry.jsonl --api-url http://localhost:8000/api/v1/telemetry
-```
+No simulation constants are hardcoded outside the config schema defaults.
 
-Bulk-Modus:
+## Scientific assumptions & limitations
 
-```bash
-python scripts/load_pipeline_data.py data/sample_telemetry.jsonl --api-url http://localhost:8000/api/v1/telemetry --bulk
-```
+Assumptions and simplifications are documented in `backend/twin/core.py` docstring/comments.
 
-## Tests
+- Designed for design-science experimentation and scenario comparison
+- Deterministic mode enabled by default for reproducibility
+- Not a power-flow solver; use as an explainable decision-support artifact
+
+## Testing
 
 ```bash
 pytest -q
