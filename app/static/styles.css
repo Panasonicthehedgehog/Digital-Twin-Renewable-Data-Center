@@ -1,0 +1,79 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, system-ui, sans-serif;
+}
+body {
+  margin: 0;
+  background: #091320;
+  color: #ecf5ff;
+}
+header {
+  padding: 1.2rem 2rem;
+  background: linear-gradient(90deg, #0f2841, #132f4b);
+  border-bottom: 1px solid #264f72;
+}
+main {
+  padding: 1rem 2rem 2rem;
+  display: grid;
+  gap: 1rem;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.8rem;
+}
+.card {
+  background: #11263d;
+  border: 1px solid #2f5274;
+  border-radius: 10px;
+  padding: 0.8rem 1rem;
+}
+.metrics .value {
+  font-weight: 700;
+  font-size: 1.2rem;
+}
+.progress {
+  width: 100%;
+  height: 14px;
+  border-radius: 999px;
+  background: #20344a;
+  overflow: hidden;
+  margin-top: 0.5rem;
+}
+.progress > div {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #27d77f, #9ef3c8);
+}
+#halls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 0.8rem;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+th,
+td {
+  border-bottom: 1px solid #274664;
+  padding: 0.25rem;
+  text-align: left;
+}
+#api-status {
+  color: #ffd27e;
+  margin: 0;
+}
+footer {
+  color: #a6bdd2;
+  font-size: 0.85rem;
+}
+
+#itwin-topology {
+  width: 100%;
+  max-width: 920px;
+  background: #0b1b2a;
+  border: 1px solid #2b4f70;
+  border-radius: 8px;
+}
