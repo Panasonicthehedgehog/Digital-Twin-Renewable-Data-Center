@@ -1,3 +1,0 @@
-{"weather": {"ambientTempC": 31.2, "ghiWm2": 920}, "renewables": [{"id": "solar-west", "outputKw": 18000}]}
-{"halls": [{"id": "hall-a", "racks": [{"id": "a-r1", "cpuUtilization": 0.84, "inletTempC": 27.1}]}], "grid": {"priceEurPerMwh": 167}}
-{"batteries": [{"id": "bess-1", "soc": 0.74}], "renewables": [{"id": "wind-1", "outputKw": 11200}]}
