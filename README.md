@@ -1,103 +1,43 @@
-# Hyperscale AI Data Center Digital Twin
+# Reneweble Data Center: Digital Twin ♻️
 
-Research-oriented, out-of-the-box digital twin for hyperscaler AI data centers.
+Research-oriented, out-of-the-box digital twin for hyperscaler AI data centers. 
 
-## What this system models
+Motivation:  This is an international research project between indian and german university Students. The goal is to support SDG 7 for sutainable energy. 
 
-- Hierarchical infrastructure: **Server → Rack → Hall → Block → Data Center**
-- Dynamic AI IT load and cooling/infrastructure overhead
-- Energy portfolio: grid, PV, wind, battery, hydrogen bridge
-- Configurable weather and stress scenarios (heatwave, dunkelflaute, grid restriction, load spikes)
-- Explicit operational limits with failure detection and hydrogen resilience visibility
+### The Goal is to:
 
-## Repository layout
+1. enable permanently renewable data centers.
+2. Identify regions in which data centers could endanger the renewable energy supply.
+3. Impose vacancies for energy suppliers
 
-```text
-backend/
-  app.py                 # FastAPI app (REST + WebSocket)
-  twin/
-    config.py            # Pydantic config schema + YAML IO
-    core.py              # Simulation engine, hierarchy aggregation, energy balance
-config/
-  default_config.yaml    # Runtime-editable deployment config
-frontend/
-  index.html
-  package.json
-  src/main.js            # Browser dashboard + controls + websocket client
-  src/styles.css
-main.py                  # One-command backend launcher (python main.py)
-tests/test_api.py
-```
+## Optical Example's: 
 
-## Architecture
+<img width="500" height="250" alt="image" src="https://github.com/user-attachments/assets/1723be62-0391-4e4b-bcaa-fc2921659d51" />
+<img width="500" height="250" alt="image" src="https://github.com/user-attachments/assets/ef255e00-f033-4fef-9d06-13b0178e3220" />
 
-### 1) Twin Core (Python)
-- Deterministic step simulation (`timestep_minutes`)
-- Explainable calculations for:
-  - IT load (server count × utilization)
-  - Cooling load (COP + ambient temperature impact)
-  - Infrastructure overhead
-  - Renewable generation (solar + wind weather-dependent)
-  - Dispatch order: renewables → battery → hydrogen bridge → grid → unmet load
-- Scenario engine with reproducible stress events
-- Hierarchical aggregation for visualization heatmaps
 
-### 2) API Layer
-- REST endpoints:
-  - `GET /api/state`
-  - `GET /api/scenarios`
-  - `POST /api/scenario`
-  - `POST /api/simulate`
-  - `GET /api/config`
-  - `PUT /api/config`
-- WebSocket stream:
-  - `ws://localhost:8000/ws/state`
+## Architecture 🏛️
 
-### 3) Frontend
-- Browser app (Vite, no Electron)
-- Live stress KPIs and pseudo-3D rack heatmap
-- Weather overlay, energy flow panel, failure status
-- Control panel for scenario selection and runtime config updates
+- FrondEnd: WebAPP (Library tbd)
+  1. Digital Twin Model with Components (Cooling, Racks etc.) - modeled e.g. in Blender 
+  2. Control elements for User Input to simulated Weather situation etc. 
+  3. Map to select simulated Region
 
-## Run locally
+- BackEnd:
+  1. Demand Algorithm <br/>
+     1.1. Component Demand (1000 Server AI-Stack)  
+     1.2. Usage Prediction Metric 
+  3. API pipeline with live reqests 
+  4. API towards Postgres Database
 
-### Backend
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python main.py
-```
+## Data Pipeline 🛣️
 
-### Frontend
-```bash
-cd frontend
-npm install
-npm run dev
-```
+- RestAPI:
+    1. Direct API's from Data Providers
+    2. Self hosted PostgREST API for storage allocation and as backup
 
-Open `http://localhost:5173`.
 
-## Configuration
+## Data Backbone 🦴
 
-Primary configuration file: `config/default_config.yaml`.
-
-All core parameters are editable at runtime through:
-1. **YAML config** (`/api/config` load/save path)
-2. **Frontend control panel** (AI intensity, grid capacity, hydrogen size; extensible)
-
-No simulation constants are hardcoded outside the config schema defaults.
-
-## Scientific assumptions & limitations
-
-Assumptions and simplifications are documented in `backend/twin/core.py` docstring/comments.
-
-- Designed for design-science experimentation and scenario comparison
-- Deterministic mode enabled by default for reproducibility
-- Not a power-flow solver; use as an explainable decision-support artifact
-
-## Testing
-
-```bash
-pytest -q
-```
+- Global Energygrid: [https://datasets.wri.org/datasets/global-power-plant-database](https://datasets.wri.org/datasets/global-power-plant-database?map=eyJhY3RpdmVMYXllckdyb3VwcyI6W3siZGF0YXNldElkIjoiNTM2MjNkZmQtM2RmNi00ZjE1LWEwOTEtNjc0NTdjZGI1NzFmIiwibGF5ZXJzIjpbIjJhNjk0Mjg5LWZlYzktNGJmZS1hNmQyLTU2YzM4NjRlYzM0OSJdfV0sImJhc2VtYXAiOiJsaWdodCIsImJvdW5kYXJpZXMiOmZhbHNlLCJib3VuZHMiOnsiYmJveCI6bnVsbCwib3B0aW9ucyI6e319LCJsYWJlbHMiOiJkYXJrIiwibGF5ZXJzUGFyc2VkIjpbWyIyYTY5NDI4OS1mZWM5LTRiZmUtYTZkMi01NmMzODY0ZWMzNDkiLHsiYWN0aXZlIjp0cnVlLCJsYXllclNvdXJjZSI6bnVsbCwib3BhY2l0eSI6MSwidmlzaWJpbGl0eSI6dHJ1ZSwiekluZGV4IjoxMX1dXSwidmlld1N0YXRlIjp7ImxhdGl0dWRlIjo0My41ODg2NjU5MzAyNjMxNSwibG9uZ2l0dWRlIjotOTcuMTQ0ODg5OTcxMjU5MjcsInpvb20iOjMuODcyNDIwNDQwNzcyNDQ1fX0%3D)
+- Global Weather: 
