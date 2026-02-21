@@ -25,12 +25,12 @@ Motivation:  This is an international research project between indian and german
 3. Map to select simulated Region
 
 ### BackEnd:
-1. Demand Algorithm <br/>
+1. Demand Algorithm (math 🧮) <br/>
    1.1. Component Demand (1000 Server AI-Stack)  
    1.2. Usage Prediction Metric - usage allocation on racksystems 
-2. Weather model <br/>
+2. Weather model (spatial 🌍) <br/> 
    2.1. Temperature for location - influence on cooling usage
-4. Spatial model <br/>
+4. Powergrid model (spatial 🌍) <br/> 
    4.1. Renewable Tagged Powerplants  <br/>
    4.2. MegaWatts per year calculated down to constant supply
 
@@ -43,5 +43,6 @@ Motivation:  This is an international research project between indian and german
 
 ## Data Backbone 🦴
 
-- Global Energygrid: [https://datasets.wri.org/datasets/global-power-plant-database](https://datasets.wri.org/datasets/global-power-plant-database?map=eyJhY3RpdmVMYXllckdyb3VwcyI6W3siZGF0YXNldElkIjoiNTM2MjNkZmQtM2RmNi00ZjE1LWEwOTEtNjc0NTdjZGI1NzFmIiwibGF5ZXJzIjpbIjJhNjk0Mjg5LWZlYzktNGJmZS1hNmQyLTU2YzM4NjRlYzM0OSJdfV0sImJhc2VtYXAiOiJsaWdodCIsImJvdW5kYXJpZXMiOmZhbHNlLCJib3VuZHMiOnsiYmJveCI6bnVsbCwib3B0aW9ucyI6e319LCJsYWJlbHMiOiJkYXJrIiwibGF5ZXJzUGFyc2VkIjpbWyIyYTY5NDI4OS1mZWM5LTRiZmUtYTZkMi01NmMzODY0ZWMzNDkiLHsiYWN0aXZlIjp0cnVlLCJsYXllclNvdXJjZSI6bnVsbCwib3BhY2l0eSI6MSwidmlzaWJpbGl0eSI6dHJ1ZSwiekluZGV4IjoxMX1dXSwidmlld1N0YXRlIjp7ImxhdGl0dWRlIjo0My41ODg2NjU5MzAyNjMxNSwibG9uZ2l0dWRlIjotOTcuMTQ0ODg5OTcxMjU5MjcsInpvb20iOjMuODcyNDIwNDQwNzcyNDQ1fX0%3D)
+- Global Energygrid: [https://datasets.wri.org/datasets/global-power-plant-database](https://datasets.wri.org/datasets/global-power-plant-database?map=eyJhY3RpdmVMYXllckdyb3VwcyI6W3siZGF0YXNldElkIjoiNTM2MjNkZmQtM2RmNi00ZjE1LWEwOTEtNjc0NTdjZGI1NzFmIiwibGF5ZXJzIjpbIjJhNjk0Mjg5LWZlYzktNGJmZS1hNmQyLTU2YzM4NjRlYzM0OSJdfV0sImJhc2VtYXAiOiJsaWdodCIsImJvdW5kYXJpZXMiOmZhbHNlLCJib3VuZHMiOnsiYmJveCI6bnVsbCwib3B0aW9ucyI6e319LCJsYWJlbHMiOiJkYXJrIiwibGF5ZXJzUGFyc2VkIjpbWyIyYTY5NDI4OS1mZWM5LTRiZmUtYTZkMi01NmMzODY0ZWMzNDkiLHsiYWN0aXZlIjp0cnVlLCJsYXllclNvdXJjZSI6bnVsbCwib3BhY2l0eSI6MSwidmlzaWJpbGl0eSI6dHJ1ZSwiekluZGV4IjoxMX1dXSwidmlld1N0YXRlIjp7ImxhdGl0dWRlIjo0My41ODg2NjU5MzAyNjMxNSwibG9uZ2l0dWRlIjotOTcuMTQ0ODg5OTcxMjU5MjcsInpvb20iOjMuODcyNDIwNDQwNzcyNDQ1fX0%3D) <br/>
+Structure: |country|country_long|name|gppd_idnr|capacity_mw|latitude|longitude|fuel1|fuel2|fuel3|fuel4|
 - Global Weather: 
