@@ -16,6 +16,7 @@ Motivation:  This is an international research project between indian and german
 <img width="400" height="200" alt="image" src="https://github.com/user-attachments/assets/ef255e00-f033-4fef-9d06-13b0178e3220" />
 
 
+
 ## Architecture 🏛️
 
 ### FrondEnd: WebAPP (Library tbd)
@@ -26,7 +27,7 @@ Motivation:  This is an international research project between indian and german
 ### BackEnd:
 1. Demand Algorithm <br/>
    1.1. Component Demand (1000 Server AI-Stack)  
-   1.2. Usage Prediction Metric
+   1.2. Usage Prediction Metric - usage allocation on racksystems 
 2. Weather model <br/>
    2.1. Temperature for location - influence on cooling usage
 4. Spatial model <br/>
