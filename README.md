@@ -4,7 +4,7 @@ Research-oriented, out-of-the-box digital twin for hyperscaler AI data centers.
 
 Motivation:  This is an international research project between indian and german university Students. The goal is to support SDG 7 for sutainable energy. 
 
-### The Goal is to:
+### The granualar Goal is to:
 
 1. Enable permanently renewable data centers.
 2. Identify regions in which data centers could endanger the renewable energy supply.
