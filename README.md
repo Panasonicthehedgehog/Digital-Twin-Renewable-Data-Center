@@ -22,7 +22,7 @@ Motivation:  This is an international research project between indian and german
 ### FrondEnd: WebAPP (Library tbd)
 1. Digital Twin Model with Components (Cooling, Racks etc.) - modeled e.g. in Blender 
 2. Control elements for User Input to simulated Weather situation etc. 
-3. Map to select simulated Region
+3. Map to select simulated Region ([Interactive Choropleth Map](https://leafletjs.com/examples/choropleth/))
 
 ### BackEnd:
 1. Demand Algorithm (math 🧮) <br/>
