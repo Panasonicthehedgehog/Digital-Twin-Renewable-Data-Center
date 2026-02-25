@@ -1,12 +1,248 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Hyperscale AI DC Digital Twin</title>
-    <script type="module" src="/src/main.js"></script>
+    <title>DC Location Intelligence · Renewable Energy Digital Twin</title>
+    <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+
+      <!-- ── HEADER ─────────────────────────────────────────────────────── -->
+      <header id="header">
+        <div class="header-brand">
+          <div class="brand-icon">⚡</div>
+          <div class="brand-text">
+            <span class="brand-title">DC Location Intelligence</span>
+            <span class="brand-sub">Renewable Energy Digital Twin · Hyperscaler Site Selection</span>
+          </div>
+        </div>
+
+        <nav class="header-nav">
+          <button class="nav-btn active" data-view="map">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>
+            Map Analysis
+          </button>
+          <button class="nav-btn" data-view="compare">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            Compare <span id="compare-badge" class="badge hidden">0</span>
+          </button>
+        </nav>
+
+        <div class="header-status">
+          <span id="status-dot" class="status-dot"></span>
+          <span id="status-text">Connecting…</span>
+        </div>
+      </header>
+
+      <!-- ── MAP VIEW ───────────────────────────────────────────────────── -->
+      <div id="view-map" class="view active">
+
+        <!-- LEFT SIDEBAR -->
+        <aside id="sidebar">
+          <section class="sidebar-section">
+            <h3 class="section-title">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              Data Centre Config
+            </h3>
+            <div class="config-row">
+              <label class="config-label">IT Capacity</label>
+              <div class="slider-row">
+                <input type="range" id="cfg-capacity" min="10" max="500" value="100" step="10" />
+                <span id="cfg-capacity-val" class="slider-val">100 MW</span>
+              </div>
+            </div>
+            <div class="config-row">
+              <label class="config-label">AI Intensity</label>
+              <div class="slider-row">
+                <input type="range" id="cfg-ai" min="0" max="100" value="70" />
+                <span id="cfg-ai-val" class="slider-val">70 %</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="sidebar-section flex-grow">
+            <h3 class="section-title">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              Analyzed Locations
+            </h3>
+            <div id="location-list">
+              <div class="empty-hint">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                <p>Click anywhere on the map to analyse a location</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="sidebar-section">
+            <h3 class="section-title">Score Legend</h3>
+            <div class="legend">
+              <div class="legend-item"><span class="legend-dot" style="background:#22c55e"></span>80–100 Excellent</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#84cc16"></span>65–79 Good</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span>50–64 Fair</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#f97316"></span>35–49 Poor</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span>0–34 Unsuitable</div>
+            </div>
+          </section>
+        </aside>
+
+        <!-- MAP -->
+        <div id="map-wrap">
+          <div id="map"></div>
+          <div id="map-hint">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+            Click the map to analyse a candidate site
+          </div>
+          <div id="map-loading" class="hidden">
+            <div class="spinner"></div>
+            <p>Fetching weather &amp; scoring location…</p>
+          </div>
+        </div>
+
+        <!-- RIGHT DETAIL PANEL -->
+        <aside id="detail-panel" class="panel-closed">
+          <div class="panel-inner">
+
+            <div class="panel-header">
+              <div>
+                <h2 id="detail-name">–</h2>
+                <p id="detail-coords" class="muted"></p>
+              </div>
+              <button id="btn-close-panel" class="icon-btn" title="Close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </div>
+
+            <!-- Composite score gauge -->
+            <div class="score-gauge-wrap">
+              <div class="score-gauge">
+                <svg viewBox="0 0 120 120" class="gauge-svg">
+                  <circle class="gauge-track" cx="60" cy="60" r="50"/>
+                  <circle class="gauge-fill" cx="60" cy="60" r="50" id="gauge-arc"/>
+                </svg>
+                <div class="gauge-label">
+                  <span id="gauge-score">–</span>
+                  <small>/100</small>
+                </div>
+              </div>
+              <div class="score-badge" id="score-badge">–</div>
+            </div>
+
+            <!-- Score bars -->
+            <div class="score-bars">
+              <div class="score-bar-row">
+                <span class="score-bar-icon">☀️</span>
+                <span class="score-bar-name">Solar</span>
+                <div class="bar-track"><div class="bar-fill solar" id="bar-solar"></div></div>
+                <span class="bar-val" id="val-solar">–</span>
+              </div>
+              <div class="score-bar-row">
+                <span class="score-bar-icon">💨</span>
+                <span class="score-bar-name">Wind</span>
+                <div class="bar-track"><div class="bar-fill wind" id="bar-wind"></div></div>
+                <span class="bar-val" id="val-wind">–</span>
+              </div>
+              <div class="score-bar-row">
+                <span class="score-bar-icon">🌡️</span>
+                <span class="score-bar-name">Climate</span>
+                <div class="bar-track"><div class="bar-fill climate" id="bar-climate"></div></div>
+                <span class="bar-val" id="val-climate">–</span>
+              </div>
+              <div class="score-bar-row">
+                <span class="score-bar-icon">⚡</span>
+                <span class="score-bar-name">Grid</span>
+                <div class="bar-track"><div class="bar-fill grid" id="bar-grid"></div></div>
+                <span class="bar-val" id="val-grid">–</span>
+              </div>
+            </div>
+
+            <!-- KPI chips -->
+            <div class="kpi-row">
+              <div class="kpi-chip">
+                <span class="kpi-label">Avg Temp</span>
+                <span class="kpi-value" id="kpi-temp">–</span>
+                <span class="kpi-unit">°C</span>
+              </div>
+              <div class="kpi-chip">
+                <span class="kpi-label">Wind</span>
+                <span class="kpi-value" id="kpi-wind">–</span>
+                <span class="kpi-unit">m/s</span>
+              </div>
+              <div class="kpi-chip">
+                <span class="kpi-label">Irradiance</span>
+                <span class="kpi-value" id="kpi-solar">–</span>
+                <span class="kpi-unit">W/m²</span>
+              </div>
+              <div class="kpi-chip">
+                <span class="kpi-label">Est. PUE</span>
+                <span class="kpi-value" id="kpi-pue">–</span>
+                <span class="kpi-unit"></span>
+              </div>
+            </div>
+
+            <!-- Renewable coverage bar -->
+            <div class="ren-bar-wrap">
+              <div class="ren-bar-header">
+                <span>Avg Renewable Coverage</span>
+                <span id="ren-pct" class="ren-pct">– %</span>
+              </div>
+              <div class="ren-track"><div class="ren-fill" id="ren-fill"></div></div>
+            </div>
+
+            <!-- Recommendation -->
+            <div class="recommendation" id="recommendation"></div>
+
+            <!-- 7-day energy forecast -->
+            <div class="chart-card">
+              <h4 class="chart-title">7-Day Energy Forecast</h4>
+              <div class="chart-wrap">
+                <canvas id="chart-energy"></canvas>
+              </div>
+            </div>
+
+            <!-- Energy mix donut -->
+            <div class="chart-card">
+              <h4 class="chart-title">Energy Mix</h4>
+              <div class="mix-wrap">
+                <div class="donut-wrap">
+                  <canvas id="chart-mix"></canvas>
+                </div>
+                <div class="mix-legend" id="mix-legend"></div>
+              </div>
+            </div>
+
+            <button class="btn-primary" id="btn-add-compare">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              Add to Comparison
+            </button>
+          </div>
+        </aside>
+      </div>
+
+      <!-- ── COMPARE VIEW ─────────────────────────────────────────────────── -->
+      <div id="view-compare" class="view">
+        <div class="compare-container">
+          <div class="compare-header">
+            <h2>Location Comparison</h2>
+            <p class="muted">Compare candidate sites side by side · max 5 locations</p>
+          </div>
+          <div id="compare-content">
+            <div class="empty-hint large">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              <p>Analyse locations on the map and click "Add to Comparison"</p>
+            </div>
+          </div>
+          <div class="compare-chart-section hidden" id="compare-chart-section">
+            <h3>Score Comparison</h3>
+            <div class="compare-chart-wrap">
+              <canvas id="chart-compare"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- #app -->
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>

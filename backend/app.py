@@ -4,9 +4,11 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+import requests
 
 from backend.twin.config import TwinConfig, load_config, write_config
 from backend.twin.core import SCENARIOS, DigitalTwinEngine
@@ -20,6 +22,14 @@ class ScenarioRequest(BaseModel):
 
 class StepRequest(BaseModel):
     steps: int = 1
+
+
+class LocationRequest(BaseModel):
+    lat: float = Field(..., ge=-90, le=90, description="Latitude in decimal degrees")
+    lng: float = Field(..., ge=-180, le=180, description="Longitude in decimal degrees")
+    dc_capacity_mw: float = Field(100.0, gt=0, le=2000, description="IT load capacity in MW")
+    servers: int = Field(50_000, gt=0, description="Number of servers")
+    ai_intensity: float = Field(0.70, ge=0, le=1, description="AI workload fraction")
 
 
 class TwinRuntime:
@@ -108,6 +118,32 @@ def update_config(payload: dict[str, Any]) -> dict[str, Any]:
     runtime.engine.update_config(runtime.config)
     runtime.state = runtime.engine.simulate_step()
     return {"status": "ok", "config": runtime.config.model_dump(), "state": runtime.state}
+
+
+@app.post("/api/location/analyze")
+async def analyze_location(payload: LocationRequest) -> dict[str, Any]:
+    """Analyse a geographic location for hyperscaler data centre suitability.
+
+    Fetches real weather data from Open-Meteo, performs reverse geocoding via
+    Nominatim, and returns multi-dimensional scores plus a 7-day energy simulation.
+    """
+    from backend.twin.location_scorer import analyze_location as _analyze
+
+    try:
+        result = _analyze(
+            lat=payload.lat,
+            lng=payload.lng,
+            dc_capacity_mw=payload.dc_capacity_mw,
+            servers=payload.servers,
+            ai_intensity=payload.ai_intensity,
+        )
+        return result
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="External weather API timeout. Please retry.")
+    except requests.exceptions.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"External API error: {exc}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.websocket("/ws/state")
