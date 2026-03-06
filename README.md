@@ -15,8 +15,25 @@ Motivation:  This is an international research project between indian and german
 <img width="400" height="200" alt="image" src="https://github.com/user-attachments/assets/1723be62-0391-4e4b-bcaa-fc2921659d51" />
 <img width="400" height="200" alt="image" src="https://github.com/user-attachments/assets/ef255e00-f033-4fef-9d06-13b0178e3220" />
 
-
-
+## Testing Guide 📚
+1. Git Clone in selected folder with Terminal - cd 
+```bash
+git clone https://github.com/<your username>/Digital-Twin-Renewable-Data-Center.git
+```
+2. Activate Backend in projectfolder 
+ ```bash
+cd Digital-Twin-Renewable-Data-Center
+.venv/bin/uvicorn backend.app:app --reload
+```
+3. Active Frontend in second terminal window (again in projectfolder)
+```bash
+  cd frontend
+  npm run dev
+```
+4. Open Localhost
+```bash
+http://localhost:5173/
+```
 ## Architecture 🏛️
 
 ### FrondEnd: WebAPP (Library tbd)
