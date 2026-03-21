@@ -1,48 +1,66 @@
-# Reneweble Data Center: Digital Twin ♻️
+# Renewable Data Center: Location Intelligence ♻️
 
-Research-oriented, out-of-the-box digital twin for hyperscaler AI data centers. 
+Research webapp to find optimal locations for hyperscaler AI data centers based on renewable energy availability.
 
-Motivation:  This is an international research project between indian and german university Students. The goal is to support SDG 7 for sutainable energy. 
+**Motivation:** This is an Indo-German research project supporting UN SDGs 7, 9, 11, and 13 (sustainable energy and infrastructure).
 
-### The granualar Goal is to:
+### Goals
 
 1. Enable permanently renewable data centers.
-2. Identify regions in which data centers could endanger the renewable energy supply.
-3. Impose vacancies for energy suppliers
+2. Identify regions where data centers could endanger the local renewable energy supply.
+3. Assess regional energy impact for policymakers and energy suppliers.
 
-## Optical Example's: 
+## Getting Started
 
-<img width="400" height="200" alt="image" src="https://github.com/user-attachments/assets/1723be62-0391-4e4b-bcaa-fc2921659d51" />
-<img width="400" height="200" alt="image" src="https://github.com/user-attachments/assets/ef255e00-f033-4fef-9d06-13b0178e3220" />
+```bash
+git clone https://github.com/YOUR_USERNAME/Digital-Twin-Renewable-Data-Center.git
+cd Digital-Twin-Renewable-Data-Center
+```
 
+**Backend** (from project root):
+```bash
+.venv/bin/uvicorn backend.app:app --reload
+```
 
+**Frontend** (in a second terminal):
+```bash
+cd frontend
+npm run dev
+```
 
+Open **http://localhost:5173** in your browser.
 ## Architecture 🏛️
 
-### FrondEnd: WebAPP (Library tbd)
-1. Digital Twin Model with Components (Cooling, Racks etc.) - modeled e.g. in Blender 
-2. Control elements for User Input to simulated Weather situation etc. 
-3. Map to select simulated Region ([Interactive Choropleth Map](https://leafletjs.com/examples/choropleth/))
+### Frontend – Vite + Leaflet + Chart.js (vanilla JS)
+- Interactive world map (CartoDB Positron basemap)
+- Click any location to trigger a live renewable energy suitability analysis
+- Sliding detail panel with score gauge, KPI chips, energy time series, and mix charts
+- Location comparison view (up to 5 sites)
+- Sidebar sliders for IT capacity (MW) and AI workload intensity
 
-### BackEnd:
-1. Demand Algorithm (math 🧮) <br/>
-   1.1. Component Demand (1000 Server AI-Stack)  
-   1.2. Usage Prediction Metric - usage allocation on racksystems 
-2. Weather model (spatial 🌍) <br/> 
-   2.1. Temperature for location - influence on cooling usage
-4. Powergrid model (spatial 🌍) <br/> 
-   4.1. Renewable Tagged Powerplants  <br/>
-   4.2. MegaWatts per year calculated down to constant supply
+### Backend – FastAPI (Python)
+- `POST /api/location/analyze` – fetches 7-day hourly weather from Open-Meteo, reverse-geocodes via Nominatim (OSM), and returns a multi-dimensional suitability score
+- Digital twin simulation engine for step-by-step energy balance modelling (IT load → cooling → renewables → battery → hydrogen → grid)
+- WebSocket `/ws/state` for real-time simulation state streaming
 
-## Data Pipeline 🛣️
+## Scoring Model
 
-### RestAPI:
-1. Direct API's from Data Providers
-2. Self hosted PostgREST API for storage allocation and as backup
+Each location is scored on four dimensions (0–100):
 
+| Dimension | Weight | Basis |
+|-----------|--------|-------|
+| Solar     | 28 %   | Latitude band + 7-day avg. shortwave irradiance (Open-Meteo) |
+| Wind      | 28 %   | 7-day avg. wind speed, cubic power law (optimal 7–12 m/s) |
+| Climate   | 24 %   | Avg. temperature effect on PUE (optimal 8–14 °C) |
+| Grid      | 20 %   | Country-level renewable grid reliability (ISO 3166-1 alpha-2 lookup) |
 
-## Data Backbone 🦴
+> Scores reflect the **current 7-day forecast**, not annual averages — seasonal variation is intentional.
 
-- Global Energygrid: [https://datasets.wri.org/datasets/global-power-plant-database](https://datasets.wri.org/datasets/global-power-plant-database?map=eyJhY3RpdmVMYXllckdyb3VwcyI6W3siZGF0YXNldElkIjoiNTM2MjNkZmQtM2RmNi00ZjE1LWEwOTEtNjc0NTdjZGI1NzFmIiwibGF5ZXJzIjpbIjJhNjk0Mjg5LWZlYzktNGJmZS1hNmQyLTU2YzM4NjRlYzM0OSJdfV0sImJhc2VtYXAiOiJsaWdodCIsImJvdW5kYXJpZXMiOmZhbHNlLCJib3VuZHMiOnsiYmJveCI6bnVsbCwib3B0aW9ucyI6e319LCJsYWJlbHMiOiJkYXJrIiwibGF5ZXJzUGFyc2VkIjpbWyIyYTY5NDI4OS1mZWM5LTRiZmUtYTZkMi01NmMzODY0ZWMzNDkiLHsiYWN0aXZlIjp0cnVlLCJsYXllclNvdXJjZSI6bnVsbCwib3BhY2l0eSI6MSwidmlzaWJpbGl0eSI6dHJ1ZSwiekluZGV4IjoxMX1dXSwidmlld1N0YXRlIjp7ImxhdGl0dWRlIjo0My41ODg2NjU5MzAyNjMxNSwibG9uZ2l0dWRlIjotOTcuMTQ0ODg5OTcxMjU5MjcsInpvb20iOjMuODcyNDIwNDQwNzcyNDQ1fX0%3D) <br/>
-Structure: |country|country_long|name|gppd_idnr|capacity_mw|latitude|longitude|fuel1|fuel2|fuel3|fuel4|
-- Global Weather: 
+## External APIs (no keys required)
+
+- **[Open-Meteo](https://open-meteo.com/)** – free hourly weather forecast (7 days)
+- **[Nominatim / OSM](https://nominatim.openstreetmap.org/)** – free reverse geocoding
+
+## Data Sources
+
+- Global power plant database: [WRI Global Power Plant Database](https://datasets.wri.org/datasets/global-power-plant-database)
