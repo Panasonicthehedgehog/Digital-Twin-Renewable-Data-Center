@@ -123,14 +123,19 @@ function initMap() {
   map = L.map('map', {
     center: [30, 10],
     zoom: 3,
+    minZoom: 2,
     zoomControl: false,
+    maxBounds: [[-85, -180], [85, 180]],
+    maxBoundsViscosity: 1.0,
   });
 
   // CartoDB Positron – clean, light basemap
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     attribution: '© <a href="https://openstreetmap.org">OSM</a> © <a href="https://carto.com">CARTO</a>',
     subdomains: 'abcd',
+    minZoom: 2,
     maxZoom: 18,
+    noWrap: true,
   }).addTo(map);
 
   L.control.zoom({ position: 'topright' }).addTo(map);
@@ -680,13 +685,56 @@ function bindUI() {
     document.getElementById('cfg-capacity-val').textContent = `${mw.toLocaleString()} MW`;
   }
 
+  // Debounced re-analysis of the currently open location
+  let _reanalyzeTimer = null;
+  async function reanalyzeActive() {
+    if (state.activeId === null) return;
+    const loc = state.locations.find(l => l._id === state.activeId);
+    if (!loc) return;
+
+    setLoading(true);
+    try {
+      const result = await analyzeLocation(
+        loc.location.lat, loc.location.lng,
+        Number(aiSlider.value), Number(serversSlider.value),
+      );
+      result._id = loc._id;
+
+      // Replace in locations list
+      const idx = state.locations.findIndex(l => l._id === loc._id);
+      if (idx !== -1) state.locations[idx] = result;
+
+      // Update marker icon if score changed
+      const marker = state.markers.get(loc._id);
+      if (marker) marker.setIcon(createMarkerIcon(result.scores.composite));
+
+      // Sync comparison entry if present
+      const cIdx = state.compared.findIndex(c => c._id === loc._id);
+      if (cIdx !== -1) state.compared[cIdx] = result;
+
+      showDetailPanel(result);
+      renderSidebarList();
+    } catch (err) {
+      console.error('Re-analysis failed:', err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function scheduleReanalyze() {
+    clearTimeout(_reanalyzeTimer);
+    _reanalyzeTimer = setTimeout(reanalyzeActive, 600);
+  }
+
   aiSlider.addEventListener('input', () => {
     document.getElementById('cfg-ai-val').textContent = `${aiSlider.value} %`;
     updateCapacityDisplay();
+    scheduleReanalyze();
   });
   serversSlider.addEventListener('input', () => {
     document.getElementById('cfg-servers-val').textContent = Number(serversSlider.value).toLocaleString();
     updateCapacityDisplay();
+    scheduleReanalyze();
   });
   updateCapacityDisplay(); // initial render
 
