@@ -27,7 +27,6 @@ class StepRequest(BaseModel):
 class LocationRequest(BaseModel):
     lat: float = Field(..., ge=-90, le=90, description="Latitude in decimal degrees")
     lng: float = Field(..., ge=-180, le=180, description="Longitude in decimal degrees")
-    dc_capacity_mw: float = Field(100.0, gt=0, le=2000, description="IT load capacity in MW")
     servers: int = Field(50_000, gt=0, description="Number of servers")
     ai_intensity: float = Field(0.70, ge=0, le=1, description="AI workload fraction")
 
@@ -133,7 +132,6 @@ async def analyze_location(payload: LocationRequest) -> dict[str, Any]:
         result = _analyze(
             lat=payload.lat,
             lng=payload.lng,
-            dc_capacity_mw=payload.dc_capacity_mw,
             servers=payload.servers,
             ai_intensity=payload.ai_intensity,
         )

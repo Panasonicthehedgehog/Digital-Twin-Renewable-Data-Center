@@ -7,11 +7,10 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
   Chart,
-  LineController, LineElement, PointElement,
   LinearScale, CategoryScale,
   DoughnutController, ArcElement,
   BarController, BarElement,
-  Tooltip, Legend, Filler,
+  Tooltip, Legend,
 } from 'chart.js';
 import './styles.css';
 
@@ -23,11 +22,10 @@ delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({ iconRetinaUrl: markerIcon2x, iconUrl: markerIcon, shadowUrl: markerShadow });
 
 Chart.register(
-  LineController, LineElement, PointElement,
   LinearScale, CategoryScale,
   DoughnutController, ArcElement,
   BarController, BarElement,
-  Tooltip, Legend, Filler,
+  Tooltip, Legend,
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,9 +43,9 @@ const state = {
   compared: [],       // Locations added to comparison (max 5)
   markers: new Map(), // leaflet marker per location id
   nextId: 1,
-  chartEnergy: null,
   chartMix: null,
   chartCompare: null,
+  chartRegionalMix: null,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -80,6 +78,13 @@ function dayLabels(timestamps) {
   return timestamps.map((t, i) => i % 24 === 0 ? t.slice(5, 10) : '');
 }
 
+// PDF energy model (GPU server power at utilization u, §2.1)
+function computeCapacityMw(aiIntensity, servers) {
+  const u = aiIntensity / 100;
+  const kwPerServer = 0.8 + 5.2 * Math.pow(u, 1.2) + 0.6 * u;
+  return Math.round(servers * kwPerServer / 1000);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // API Service
 // ─────────────────────────────────────────────────────────────────────────────
@@ -90,12 +95,11 @@ async function checkBackend() {
   } catch { return false; }
 }
 
-async function analyzeLocation(lat, lng, capacityMw, aiIntensity) {
+async function analyzeLocation(lat, lng, aiIntensity, servers) {
   const body = {
     lat,
     lng,
-    dc_capacity_mw: capacityMw,
-    servers: Math.round(capacityMw * 500),
+    servers,
     ai_intensity: aiIntensity / 100,
   };
   const r = await fetch(`${API_BASE}/api/location/analyze`, {
@@ -182,13 +186,13 @@ function addMapMarker(locData) {
 // ─────────────────────────────────────────────────────────────────────────────
 async function handleMapClick(e) {
   const { lat, lng } = e.latlng;
-  const capacityMw = Number(document.getElementById('cfg-capacity').value);
   const aiIntensity = Number(document.getElementById('cfg-ai').value);
+  const servers = Number(document.getElementById('cfg-servers').value);
 
   setLoading(true);
 
   try {
-    const result = await analyzeLocation(lat, lng, capacityMw, aiIntensity);
+    const result = await analyzeLocation(lat, lng, aiIntensity, servers);
     result._id = state.nextId++;
     state.locations.push(result);
     addMapMarker(result);
@@ -223,8 +227,6 @@ function showDetailPanel(locData) {
   const w = locData.weather;
   const e = locData.energy;
   const mix = e.energy_mix;
-  const ts = locData.time_series;
-
   // Header
   document.getElementById('detail-name').textContent = locData.location.display;
   document.getElementById('detail-coords').textContent =
@@ -246,10 +248,9 @@ function showDetailPanel(locData) {
   `;
 
   // Score bars
-  setBar('solar', s.solar);
-  setBar('wind', s.wind);
   setBar('climate', s.climate);
   setBar('grid', s.grid);
+  setBar('load-coverage', s.load_coverage);
 
   // KPIs
   document.getElementById('kpi-temp').textContent  = w.avg_temperature_c;
@@ -257,19 +258,17 @@ function showDetailPanel(locData) {
   document.getElementById('kpi-solar').textContent = Math.round(w.avg_irradiance_wm2);
   document.getElementById('kpi-pue').textContent   = e.estimated_pue;
 
-  // Renewable bar
-  const renPct = e.avg_renewable_pct;
-  document.getElementById('ren-pct').textContent = `${renPct.toFixed(1)} %`;
-  document.getElementById('ren-fill').style.width = `${renPct}%`;
-
   // Recommendation
   const rec = document.getElementById('recommendation');
   rec.textContent = locData.recommendation;
   rec.className = `recommendation ${recClass(s.composite)}`;
 
   // Charts
-  renderEnergyChart(ts);
-  renderMixChart(mix, e);
+  if (locData.regional_grid) {
+    renderMixChart(mix, e, locData.regional_grid);
+    renderRegionalMixChart(locData.regional_grid);
+  }
+
 
   // Highlight sidebar
   renderSidebarList();
@@ -300,109 +299,156 @@ function closeDetailPanel() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Charts
 // ─────────────────────────────────────────────────────────────────────────────
-function renderEnergyChart(ts) {
-  const ctx = document.getElementById('chart-energy').getContext('2d');
 
-  const labels = ts.map((p, i) => i % 24 === 0 ? (p.timestamp || '').slice(5, 10) : '');
-  const itLoad = ts.map(p => p.it_load_mw);
-  const solar  = ts.map(p => p.solar_mw);
-  const wind   = ts.map(p => p.wind_mw);
-  const grid   = ts.map(p => p.grid_mw);
-
-  if (state.chartEnergy) state.chartEnergy.destroy();
-
-  state.chartEnergy = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'IT Load', data: itLoad,
-          borderColor: '#6366f1', borderWidth: 2,
-          pointRadius: 0, fill: false, tension: 0.4,
-        },
-        {
-          label: 'Solar', data: solar,
-          borderColor: '#f59e0b', backgroundColor: '#f59e0b20',
-          borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.4,
-        },
-        {
-          label: 'Wind', data: wind,
-          borderColor: '#0ea5e9', backgroundColor: '#0ea5e920',
-          borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.4,
-        },
-        {
-          label: 'Grid Import', data: grid,
-          borderColor: '#ef4444', borderDash: [4, 3],
-          borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0.4,
-        },
-      ],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      animation: { duration: 500 },
-      plugins: {
-        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } },
-        tooltip: {
-          mode: 'index', intersect: false,
-          callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)} MW` },
-        },
-      },
-      scales: {
-        x: {
-          ticks: { maxRotation: 0, font: { size: 10 }, color: '#94a3b8',
-            callback: (_, i) => labels[i] },
-          grid: { color: '#f1f5f9' },
-        },
-        y: {
-          title: { display: true, text: 'MW', font: { size: 10 }, color: '#94a3b8' },
-          ticks: { font: { size: 10 }, color: '#94a3b8' },
-          grid: { color: '#f1f5f9' },
-        },
-      },
-    },
-  });
-}
-
-function renderMixChart(mix, energy) {
+function renderMixChart(_mix, _energy, rg) {
+  // Uses real regional plant data (CSV) instead of simulated 3-bucket split
   const ctx = document.getElementById('chart-mix').getContext('2d');
-
   if (state.chartMix) state.chartMix.destroy();
+
+  const labels = Object.keys(rg.fuel_mix_mw);
+  const values = Object.values(rg.fuel_mix_mw);
+  const colors = labels.map(l => FUEL_COLORS[l] || '#cbd5e1');
+  const total  = values.reduce((a, b) => a + b, 0);
 
   state.chartMix = new Chart(ctx, {
     type: 'doughnut',
-    data: {
-      labels: ['Solar', 'Wind', 'Grid'],
-      datasets: [{
-        data: [mix.solar_pct, mix.wind_pct, mix.grid_pct],
-        backgroundColor: ['#f59e0b', '#0ea5e9', '#ef4444'],
-        borderWidth: 2, borderColor: '#fff',
-      }],
-    },
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: '#fff' }] },
     options: {
-      responsive: true, maintainAspectRatio: false,
-      cutout: '65%',
+      responsive: true, maintainAspectRatio: false, cutout: '65%',
       animation: { duration: 600 },
       plugins: { legend: { display: false }, tooltip: {
-        callbacks: { label: ctx => `${ctx.label}: ${ctx.parsed.toFixed(1)} %` },
+        callbacks: { label: c => `${c.label}: ${Math.round(c.parsed).toLocaleString()} MW (${total > 0 ? (c.parsed / total * 100).toFixed(1) : 0} %)` },
       }},
     },
   });
 
-  // Legend
   const legend = document.getElementById('mix-legend');
-  const items = [
-    { color: '#f59e0b', label: 'Solar',      pct: mix.solar_pct },
-    { color: '#0ea5e9', label: 'Wind',       pct: mix.wind_pct  },
-    { color: '#ef4444', label: 'Grid Import', pct: mix.grid_pct  },
-  ];
-  legend.innerHTML = items.map(it => `
+  legend.innerHTML = labels.map((l, i) => `
     <div class="mix-row">
-      <span class="mix-dot" style="background:${it.color}"></span>
-      <span class="mix-label">${it.label}</span>
-      <span class="mix-pct">${it.pct.toFixed(1)} %</span>
+      <span class="mix-dot" style="background:${colors[i]}"></span>
+      <span class="mix-label">${l}</span>
+      <span class="mix-pct">${total > 0 ? (values[i] / total * 100).toFixed(1) : 0} %</span>
     </div>
   `).join('');
+}
+
+const FUEL_COLORS = {
+  'Solar':           '#f59e0b',
+  'Wind':            '#0ea5e9',
+  'Hydro':           '#3b82f6',
+  'Biomass':         '#22c55e',
+  'Geothermal':      '#10b981',
+  'Other Renewable': '#84cc16',
+  'Non-Renewable':   '#94a3b8',
+};
+
+// Sort + filter state for the nearby-plants table
+const _plantSort  = { col: 'distance_km', dir: 'asc' };
+const _plantState = { filter: 'renewable' }; // 'renewable' | 'all'
+
+function renderRegionalMixChart(rg) {
+  // Coverage bar
+  const capPct = Math.min(100, rg.coverage_ratio_pct);
+  document.getElementById('regional-ren-fill').style.width = `${capPct}%`;
+  document.getElementById('regional-coverage-pct').textContent = `${rg.coverage_ratio_pct.toFixed(1)} %`;
+  document.getElementById('regional-ren-label').textContent =
+    `${Math.round(rg.renewable_mw).toLocaleString()} MW renewable`;
+  document.getElementById('regional-it-label').textContent =
+    `${Math.round(rg.it_load_mw).toLocaleString()} MW needed`;
+  document.getElementById('regional-radius').textContent = `${rg.radius_km} km radius`;
+
+  const badge = document.getElementById('regional-coverage-badge');
+  if (rg.coverage_possible) {
+    badge.textContent = '✓ Regionale Erneuerbaren decken IT Load';
+    badge.style.color = '#16a34a';
+  } else {
+    badge.textContent = '✗ Netznachspeisung erforderlich';
+    badge.style.color = '#dc2626';
+  }
+
+  // Nearby plants list
+  const container = document.getElementById('regional-plant-list');
+  if (!container || !rg.top_plants?.length) return;
+
+  // Keep a reference to the plants on the container for re-sorting
+  container._plants = rg.top_plants;
+  renderPlantTable(container);
+}
+
+function renderPlantTable(container) {
+  const allPlants = container._plants ?? [];
+  const { col, dir } = _plantSort;
+
+  // Apply renewable filter
+  const plants = _plantState.filter === 'renewable'
+    ? allPlants.filter(p => p.is_renewable)
+    : allPlants;
+
+  const sorted = [...plants].sort((a, b) => {
+    let av = a[col], bv = b[col];
+    if (typeof av === 'string') av = av.toLowerCase();
+    if (typeof bv === 'string') bv = bv.toLowerCase();
+    if (av < bv) return dir === 'asc' ? -1 : 1;
+    if (av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const cols = [
+    { key: 'name',        label: 'Name' },
+    { key: 'fuel',        label: 'Quelle' },
+    { key: 'capacity_mw', label: 'MW' },
+    { key: 'distance_km', label: 'km' },
+  ];
+
+  const arrow = (key) => key !== col ? '' : dir === 'asc' ? ' ↑' : ' ↓';
+
+  const headerCells = cols.map(c =>
+    `<span class="plant-th plant-th-${c.key}" data-col="${c.key}">${c.label}${arrow(c.key)}</span>`
+  ).join('');
+
+  const rows = sorted.length ? sorted.map(p => {
+    const color = FUEL_COLORS[p.fuel] || (p.is_renewable ? '#84cc16' : '#94a3b8');
+    return `<div class="plant-row">
+      <span class="mix-dot" style="background:${color};flex-shrink:0"></span>
+      <span class="plant-name" title="${p.name}">${p.name}</span>
+      <span class="plant-fuel" style="color:${color}">${p.fuel}</span>
+      <span class="plant-cap">${Math.round(p.capacity_mw).toLocaleString()} MW</span>
+      <span class="plant-dist">${p.distance_km} km</span>
+    </div>`;
+  }).join('') : '<p style="font-size:11px;color:#94a3b8;padding:8px 0">Keine Anlagen gefunden.</p>';
+
+  const isRen = _plantState.filter === 'renewable';
+  container.innerHTML = `
+    <div class="plant-filter-row">
+      <span class="plant-filter-label">Kraftwerke</span>
+      <button class="plant-filter-btn ${isRen ? 'active' : ''}" data-filter="renewable">Nur Erneuerbar</button>
+      <button class="plant-filter-btn ${!isRen ? 'active' : ''}" data-filter="all">Alle</button>
+    </div>
+    <div class="plant-header-row">${headerCells}</div>
+    ${rows}
+  `;
+
+  // Filter toggle
+  container.querySelectorAll('.plant-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _plantState.filter = btn.dataset.filter;
+      renderPlantTable(container);
+    });
+  });
+
+  // Sort on header click
+  container.querySelectorAll('.plant-th').forEach(th => {
+    th.addEventListener('click', () => {
+      const newCol = th.dataset.col;
+      if (_plantSort.col === newCol) {
+        _plantSort.dir = _plantSort.dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        _plantSort.col = newCol;
+        _plantSort.dir = 'asc';
+      }
+      renderPlantTable(container);
+    });
+  });
 }
 
 function renderCompareChart() {
@@ -416,21 +462,19 @@ function renderCompareChart() {
   const ctx = document.getElementById('chart-compare').getContext('2d');
   if (state.chartCompare) state.chartCompare.destroy();
 
-  const names  = state.compared.map(l => l.location.city || l.location.display);
-  const solar  = state.compared.map(l => l.scores.solar);
-  const wind   = state.compared.map(l => l.scores.wind);
-  const climate = state.compared.map(l => l.scores.climate);
-  const grid   = state.compared.map(l => l.scores.grid);
+  const names       = state.compared.map(l => l.location.city || l.location.display);
+  const climate     = state.compared.map(l => l.scores.climate);
+  const grid        = state.compared.map(l => l.scores.grid);
+  const loadCover   = state.compared.map(l => l.scores.load_coverage ?? 0);
 
   state.chartCompare = new Chart(ctx, {
     type: 'bar',
     data: {
       labels: names,
       datasets: [
-        { label: 'Solar',   data: solar,   backgroundColor: '#f59e0b' },
-        { label: 'Wind',    data: wind,    backgroundColor: '#0ea5e9' },
-        { label: 'Climate', data: climate, backgroundColor: '#10b981' },
-        { label: 'Grid',    data: grid,    backgroundColor: '#8b5cf6' },
+        { label: 'Climate',       data: climate,   backgroundColor: '#10b981' },
+        { label: 'Grid',          data: grid,      backgroundColor: '#8b5cf6' },
+        { label: 'Load Coverage', data: loadCover, backgroundColor: '#22c55e' },
       ],
     },
     options: {
@@ -540,15 +584,13 @@ function renderCompareView() {
           <div class="table-loc-sub">${loc.location.lat.toFixed(2)}°, ${loc.location.lng.toFixed(2)}°</div>
         </td>
         <td><span class="table-score" style="background:${bg};color:${fg}">${s.composite}</span></td>
-        <td>${scoreMini(s.solar)}</td>
-        <td>${scoreMini(s.wind)}</td>
         <td>${scoreMini(s.climate)}</td>
         <td>${scoreMini(s.grid)}</td>
+        <td>${scoreMini(s.load_coverage ?? 0)}</td>
         <td>${w.avg_temperature_c} °C</td>
         <td>${w.avg_wind_speed_ms} m/s</td>
         <td>${Math.round(w.avg_irradiance_wm2)} W/m²</td>
         <td>${e.estimated_pue}</td>
-        <td>${e.avg_renewable_pct.toFixed(1)} %</td>
         <td><button class="btn-remove-compare" data-remove="${loc._id}">×</button></td>
       </tr>`;
   }).join('');
@@ -560,15 +602,13 @@ function renderCompareView() {
           <tr>
             <th>Location</th>
             <th>Composite</th>
-            <th>☀ Solar</th>
-            <th>💨 Wind</th>
             <th>🌡 Climate</th>
             <th>⚡ Grid</th>
+            <th>🔋 Load Cover</th>
             <th>Avg Temp</th>
             <th>Wind Speed</th>
             <th>Irradiance</th>
             <th>PUE</th>
-            <th>Renewable %</th>
             <th></th>
           </tr>
         </thead>
@@ -632,14 +672,23 @@ function bindUI() {
   document.getElementById('btn-close-panel').addEventListener('click', closeDetailPanel);
 
   // Sliders
-  const capSlider = document.getElementById('cfg-capacity');
-  const aiSlider  = document.getElementById('cfg-ai');
-  capSlider.addEventListener('input', () => {
-    document.getElementById('cfg-capacity-val').textContent = `${capSlider.value} MW`;
-  });
+  const aiSlider      = document.getElementById('cfg-ai');
+  const serversSlider = document.getElementById('cfg-servers');
+
+  function updateCapacityDisplay() {
+    const mw = computeCapacityMw(Number(aiSlider.value), Number(serversSlider.value));
+    document.getElementById('cfg-capacity-val').textContent = `${mw.toLocaleString()} MW`;
+  }
+
   aiSlider.addEventListener('input', () => {
     document.getElementById('cfg-ai-val').textContent = `${aiSlider.value} %`;
+    updateCapacityDisplay();
   });
+  serversSlider.addEventListener('input', () => {
+    document.getElementById('cfg-servers-val').textContent = Number(serversSlider.value).toLocaleString();
+    updateCapacityDisplay();
+  });
+  updateCapacityDisplay(); // initial render
 
   // Add to comparison
   document.getElementById('btn-add-compare').addEventListener('click', () => {

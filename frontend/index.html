@@ -47,10 +47,10 @@
               Data Centre Config
             </h3>
             <div class="config-row">
-              <label class="config-label">IT Capacity</label>
+              <label class="config-label">IT Load</label>
               <div class="slider-row">
-                <input type="range" id="cfg-capacity" min="10" max="500" value="100" step="10" />
-                <span id="cfg-capacity-val" class="slider-val">100 MW</span>
+                <span style="font-size:11px;color:#64748b;flex:1">AI × Servers</span>
+                <span id="cfg-capacity-val" class="slider-val">— MW</span>
               </div>
             </div>
             <div class="config-row">
@@ -58,6 +58,13 @@
               <div class="slider-row">
                 <input type="range" id="cfg-ai" min="0" max="100" value="70" />
                 <span id="cfg-ai-val" class="slider-val">70 %</span>
+              </div>
+            </div>
+            <div class="config-row">
+              <label class="config-label">Server Count</label>
+              <div class="slider-row">
+                <input type="range" id="cfg-servers" min="1000" max="100000" value="50000" step="1000" />
+                <span id="cfg-servers-val" class="slider-val">50,000</span>
               </div>
             </div>
           </section>
@@ -132,18 +139,6 @@
             <!-- Score bars -->
             <div class="score-bars">
               <div class="score-bar-row">
-                <span class="score-bar-icon">☀️</span>
-                <span class="score-bar-name">Solar</span>
-                <div class="bar-track"><div class="bar-fill solar" id="bar-solar"></div></div>
-                <span class="bar-val" id="val-solar">–</span>
-              </div>
-              <div class="score-bar-row">
-                <span class="score-bar-icon">💨</span>
-                <span class="score-bar-name">Wind</span>
-                <div class="bar-track"><div class="bar-fill wind" id="bar-wind"></div></div>
-                <span class="bar-val" id="val-wind">–</span>
-              </div>
-              <div class="score-bar-row">
                 <span class="score-bar-icon">🌡️</span>
                 <span class="score-bar-name">Climate</span>
                 <div class="bar-track"><div class="bar-fill climate" id="bar-climate"></div></div>
@@ -154,6 +149,12 @@
                 <span class="score-bar-name">Grid</span>
                 <div class="bar-track"><div class="bar-fill grid" id="bar-grid"></div></div>
                 <span class="bar-val" id="val-grid">–</span>
+              </div>
+              <div class="score-bar-row">
+                <span class="score-bar-icon">🔋</span>
+                <span class="score-bar-name">Load Cover</span>
+                <div class="bar-track"><div class="bar-fill grid" id="bar-load-coverage"></div></div>
+                <span class="bar-val" id="val-load-coverage">–</span>
               </div>
             </div>
 
@@ -181,29 +182,31 @@
               </div>
             </div>
 
-            <!-- Renewable coverage bar -->
-            <div class="ren-bar-wrap">
-              <div class="ren-bar-header">
-                <span>Avg Renewable Coverage</span>
-                <span id="ren-pct" class="ren-pct">– %</span>
-              </div>
-              <div class="ren-track"><div class="ren-fill" id="ren-fill"></div></div>
-            </div>
-
             <!-- Recommendation -->
             <div class="recommendation" id="recommendation"></div>
 
-            <!-- 7-day energy forecast -->
+            <!-- Regional Grid Mix -->
             <div class="chart-card">
-              <h4 class="chart-title">7-Day Energy Forecast</h4>
-              <div class="chart-wrap">
-                <canvas id="chart-energy"></canvas>
+              <h4 class="chart-title">Regional Grid <span id="regional-radius" style="font-weight:400;color:#94a3b8">— km radius</span></h4>
+              <div class="ren-bar-wrap" style="margin-bottom:10px">
+                <div class="ren-bar-header">
+                  <span>Renewable vs. IT Load</span>
+                  <span id="regional-coverage-pct" class="ren-pct">— %</span>
+                </div>
+                <div class="ren-track"><div class="ren-fill" id="regional-ren-fill" style="background:#0ea5e9"></div></div>
+                <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:#64748b">
+                  <span id="regional-ren-label">—</span>
+                  <span id="regional-it-label">—</span>
+                </div>
               </div>
+              <div id="regional-coverage-badge" style="text-align:center;font-size:12px;font-weight:600;padding:6px 0 10px"></div>
+              <div id="regional-plant-list"></div>
             </div>
 
-            <!-- Energy mix donut -->
+            <!-- 7-day energy forecast -->
+            <!-- Regional energy mix donut -->
             <div class="chart-card">
-              <h4 class="chart-title">Energy Mix</h4>
+              <h4 class="chart-title">Regional Energy Mix</h4>
               <div class="mix-wrap">
                 <div class="donut-wrap">
                   <canvas id="chart-mix"></canvas>

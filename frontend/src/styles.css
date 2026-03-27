@@ -473,6 +473,74 @@ canvas { display: block; }
 }
 .compare-chart-wrap canvas { width: 100% !important; height: 100% !important; }
 
+/* Nearby plants list */
+.plant-filter-row {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 8px;
+}
+.plant-filter-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-muted);
+  flex: 1;
+}
+.plant-filter-btn {
+  font-size: 10px; font-weight: 600;
+  padding: 3px 9px; border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent; color: var(--text-muted);
+  cursor: pointer; transition: background .15s, color .15s, border-color .15s;
+}
+.plant-filter-btn:hover { border-color: var(--primary); color: var(--primary); }
+.plant-filter-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+.plant-header-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 4px 0 5px;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 2px;
+}
+.plant-th {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--text-muted);
+  cursor: pointer; user-select: none;
+  white-space: nowrap;
+  transition: color .15s;
+}
+.plant-th:hover { color: var(--primary); }
+/* align headers to match row layout: dot(14px) name(flex) fuel quelle cap dist */
+.plant-th:nth-child(1) { width: 14px; visibility: hidden; }  /* dot placeholder */
+.plant-th-name        { flex: 1; min-width: 0; }
+.plant-th-fuel        { min-width: 72px; }
+.plant-th-capacity_mw { min-width: 54px; text-align: right; }
+.plant-th-distance_km { min-width: 38px; text-align: right; }
+
+.plant-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+.plant-row:last-child { border-bottom: none; }
+.plant-name {
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--text);
+}
+.plant-fuel {
+  min-width: 72px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .03em;
+  flex-shrink: 0;
+}
+.plant-cap {
+  min-width: 54px; text-align: right; font-weight: 600;
+  color: var(--text); flex-shrink: 0;
+}
+.plant-dist {
+  min-width: 38px; text-align: right;
+  color: var(--text-muted); flex-shrink: 0;
+}
+
 /* ── Utilities ─────────────────────────────────────────── */
 .hidden { display: none !important; }
 

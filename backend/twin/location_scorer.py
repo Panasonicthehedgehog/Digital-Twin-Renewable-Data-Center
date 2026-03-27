@@ -7,65 +7,127 @@ efficiency), and grid infrastructure reliability.
 
 from __future__ import annotations
 
+import csv
 import math
 import statistics
+from pathlib import Path
 from typing import Any
 
 import requests
 
 # ---------------------------------------------------------------------------
-# Country-level grid reliability / renewable infrastructure scores (0–100)
-# Keyed by ISO 3166-1 alpha-2 country code (returned by Nominatim as country_code)
-# Based on IEA and Enerdata country profiles
+# Power plant database – loaded once at module startup from WRI global CSV
 # ---------------------------------------------------------------------------
-COUNTRY_GRID_SCORES: dict[str, float] = {
-    # Northern Europe – excellent grids + high renewable share
-    "IS": 99,  # Iceland
-    "NO": 97,  # Norway
-    "SE": 96,  # Sweden
-    "DK": 95,  # Denmark
-    "FI": 94,  # Finland
-    "CH": 93,  # Switzerland
-    "LU": 92,  # Luxembourg
-    "NL": 91,  # Netherlands
-    "DE": 90,  # Germany
-    "AT": 90,  # Austria
-    "BE": 89,  # Belgium
-    "IE": 88,  # Ireland
-    "GB": 87,  # United Kingdom
-    # Western/Central Europe
-    "FR": 88,  # France
-    "PT": 85,  # Portugal
-    "ES": 84,  # Spain
-    "IT": 81,  # Italy
-    "PL": 75,  # Poland
-    "CZ": 79,  # Czech Republic
-    "SK": 76,  # Slovakia
-    "HU": 74,  # Hungary
-    "RO": 68,  # Romania
-    "BG": 65,  # Bulgaria
-    "GR": 72,  # Greece
-    "HR": 70,  # Croatia
-    # North America
-    "CA": 89,  # Canada
-    "US": 84,  # United States
-    # Asia-Pacific
-    "JP": 91,  # Japan
-    "SG": 95,  # Singapore
-    "KR": 88,  # South Korea
-    "AU": 82,  # Australia
-    "NZ": 91,  # New Zealand
-    # Emerging markets
-    "CN": 78,  # China
-    "IN": 67,  # India
-    "BR": 72,  # Brazil
-    "ZA": 55,  # South Africa
-    "MX": 65,  # Mexico
-    "AE": 75,  # UAE
-    "SA": 68,  # Saudi Arabia
-    "CL": 70,  # Chile
-}
-_GRID_DEFAULT = 62.0
+
+_RENEWABLE_FUELS: frozenset[str] = frozenset(
+    ["Hydro", "Solar", "Wind", "Biomass", "Geothermal", "Wave and Tidal"]
+)
+_CHART_FUELS: frozenset[str] = frozenset(
+    ["Hydro", "Solar", "Wind", "Biomass", "Geothermal"]
+)
+
+# Each entry: (lat, lon, capacity_mw, fuel, is_renewable)
+_PLANT_DATA: list[tuple[float, float, float, str, bool]] = []
+
+
+def _load_plants() -> None:
+    csv_path = Path(__file__).parent.parent.parent / "data" / "all_power_plants_clean.csv"
+    try:
+        with open(csv_path, newline="", encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                try:
+                    _PLANT_DATA.append((
+                        float(row["latitude"]),
+                        float(row["longitude"]),
+                        float(row["capacity_mw"]) if row["capacity_mw"] else 0.0,
+                        row["fuel1"] or "Unknown",
+                        row["is_renewable"] == "True",
+                        row.get("name", "Unknown"),
+                    ))
+                except (ValueError, KeyError):
+                    continue
+    except FileNotFoundError:
+        pass  # graceful fallback – grid scores will be 0
+
+
+_load_plants()
+
+_REGIONAL_RADIUS_KM = 100.0
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2)
+    return 6_371.0 * 2 * math.asin(math.sqrt(a))
+
+
+def get_regional_plant_stats(lat: float, lng: float) -> dict[str, Any]:
+    """Aggregate power plant capacity within _REGIONAL_RADIUS_KM of the site."""
+    fuel_mw: dict[str, float] = {}
+    total_mw = 0.0
+    renewable_mw = 0.0
+    count = 0
+    # Bounding-box pre-filter before haversine (1° lat ≈ 111 km)
+    lat_margin = _REGIONAL_RADIUS_KM / 111.0
+    lon_margin = _REGIONAL_RADIUS_KM / max(0.01, 111.0 * math.cos(math.radians(lat)))
+    plant_records: list[dict[str, Any]] = []
+    for p_lat, p_lon, cap, fuel, is_ren, name in _PLANT_DATA:
+        if abs(p_lat - lat) > lat_margin or abs(p_lon - lng) > lon_margin:
+            continue
+        dist = _haversine_km(lat, lng, p_lat, p_lon)
+        if dist > _REGIONAL_RADIUS_KM:
+            continue
+        fuel_mw[fuel] = fuel_mw.get(fuel, 0.0) + cap
+        total_mw += cap
+        if is_ren:
+            renewable_mw += cap
+        count += 1
+        plant_records.append({"name": name, "fuel": fuel, "capacity_mw": cap,
+                               "is_renewable": is_ren, "distance_km": round(dist, 1)})
+    # Select top 3 per fuel type (by capacity) across ALL plants, fill to MAX_PLANTS.
+    # The frontend handles filtering by renewable/all.
+    MAX_PLANTS = 25
+    TOP_PER_FUEL = 3
+    renewable_records = plant_records  # include all fuels for frontend filter
+    renewable_records.sort(key=lambda x: -x["capacity_mw"])
+    selected: list[dict[str, Any]] = []
+    seen_per_fuel: dict[str, int] = {}
+    remainder: list[dict[str, Any]] = []
+    for p in renewable_records:
+        n = seen_per_fuel.get(p["fuel"], 0)
+        if n < TOP_PER_FUEL:
+            selected.append(p)
+            seen_per_fuel[p["fuel"]] = n + 1
+        else:
+            remainder.append(p)
+    slots_left = MAX_PLANTS - len(selected)
+    if slots_left > 0:
+        selected_ids = {id(p) for p in selected}
+        for p in remainder:
+            if slots_left <= 0:
+                break
+            if id(p) not in selected_ids:
+                selected.append(p)
+                slots_left -= 1
+    selected.sort(key=lambda x: -x["capacity_mw"])
+    return {
+        "fuel_mw": fuel_mw, "total_mw": total_mw,
+        "renewable_mw": renewable_mw, "plant_count": count,
+        "top_plants": selected,
+    }
+
+
+def score_grid_regional(renewable_mw: float, total_mw: float) -> float:
+    """Grid score 0–100 derived from actual regional plant data.
+
+    50 pts for renewable fraction + 50 pts for absolute renewable capacity
+    (log-scaled, ceiling at 100 GW).
+    """
+    fraction = renewable_mw / total_mw if total_mw > 0 else 0.0
+    capacity_score = min(50.0, math.log1p(renewable_mw) / math.log1p(100_000.0) * 50.0)
+    return round(fraction * 50.0 + capacity_score, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -215,31 +277,40 @@ def score_wind(avg_wind_ms: float) -> float:
 def score_climate(avg_temp_c: float, temp_std_c: float) -> float:
     """Climate/cooling suitability score 0–100.
 
-    Low ambient temperatures enable free-air cooling and reduce PUE.
-    Optimal: 8–14 °C annual average (e.g. Nordic / North Sea coast).
-    High temperature variance incurs HVAC overhead.
+    Colder ambient air enables free-air cooling and directly lowers PUE —
+    consistent with estimate_pue() where <5 °C → PUE 1.10 (best class).
+
+    Breakpoints:
+        0–10 °C   : 100   optimal free-air cooling, no freeze risk
+       -10– 0 °C  :  95   near-optimal, minimal freeze-protection overhead
+       -20–-10 °C :  88   cold, standard freeze protection required
+        < -20 °C  :  ↓    operational challenges (heat tracing, arctic logistics)
+       10– 20 °C  :  ↓    mechanical cooling increasingly required
+       20– 30 °C  :  ↓    significant cooling load
+        > 30 °C   :  ↓    severe, approaches 0 at ~40 °C
+
+    Temperature variance (stdev over 7-day hourly series) adds HVAC complexity.
     """
     t = avg_temp_c
-    if 8.0 <= t <= 14.0:
+    if 0.0 <= t <= 10.0:
         base = 100.0
-    elif 4.0 <= t < 8.0:
-        base = 80 + (t - 4.0) * 5.0
-    elif 14.0 < t <= 22.0:
-        base = 100 - (t - 14.0) * 5.0
-    elif 0.0 <= t < 4.0:
-        base = 65 + t * 3.75
-    elif t < 0.0:
-        base = max(30.0, 65 + t * 3.0)   # very cold → permafrost / heating costs
-    else:  # > 22 °C
-        base = max(0.0, 60 - (t - 22.0) * 4.0)
+    elif -10.0 <= t < 0.0:
+        base = 95.0
+    elif -20.0 <= t < -10.0:
+        base = 88.0
+    elif t < -20.0:
+        base = max(60.0, 88.0 + (t + 20.0) * 1.4)   # at -20: 88, at ~-40: 60
+    elif t <= 20.0:
+        base = 100.0 - (t - 10.0) * 3.0              # at 10: 100, at 20: 70
+    elif t <= 30.0:
+        base = 70.0 - (t - 20.0) * 3.5               # at 20: 70, at 30: 35
+    else:
+        base = max(0.0, 35.0 - (t - 30.0) * 3.5)     # at 30: 35, at ~40: 0
 
-    variance_penalty = min(25.0, temp_std_c * 1.8)
+    variance_penalty = min(20.0, temp_std_c * 1.5)
     return round(max(0.0, min(100.0, base - variance_penalty)), 1)
 
 
-def score_grid(country_code: str) -> float:
-    """Grid reliability score based on ISO 3166-1 alpha-2 country code."""
-    return COUNTRY_GRID_SCORES.get(country_code.upper(), _GRID_DEFAULT)
 
 
 # ---------------------------------------------------------------------------
@@ -267,48 +338,6 @@ def estimate_pue(avg_temp_c: float) -> float:
         return 1.65
 
 
-def _renewable_hourly(
-    hour_of_day: int,
-    solar_irr_wm2: float,
-    wind_ms: float,
-    dc_it_mw: float,
-    solar_installed_mw: float,
-    wind_installed_mw: float,
-) -> dict[str, float]:
-    """Compute renewable generation for a single hour."""
-    # IT load: slight diurnal variation (more compute during business hours)
-    load_factor = 0.82 + 0.18 * math.sin(math.pi * max(0, hour_of_day - 6) / 12) \
-        if 6 <= hour_of_day <= 18 else 0.82
-    it_load = dc_it_mw * load_factor
-
-    # Solar: linear to irradiance, bounded by installed capacity, ηpv ≈ 18 %
-    # irr in W/m² → panel efficiency 18% → normalise to installed MW
-    solar_cf = solar_irr_wm2 / 1000.0 * 0.18 / 0.18  # simplified capacity factor
-    solar_gen = min(solar_installed_mw, solar_cf * solar_installed_mw)
-
-    # Wind: cubic power law, cut-in 2.5 m/s, rated at 12 m/s, cut-out 25 m/s
-    if wind_ms < 2.5 or wind_ms > 25:
-        wind_cf = 0.0
-    elif wind_ms < 12.0:
-        wind_cf = min(1.0, (wind_ms / 12.0) ** 3)
-    else:
-        wind_cf = 1.0
-    wind_gen = wind_cf * wind_installed_mw
-
-    renewable_gen = solar_gen + wind_gen
-    grid_import = max(0.0, it_load - renewable_gen)
-    surplus = max(0.0, renewable_gen - it_load)
-    ren_pct = min(100.0, renewable_gen / it_load * 100) if it_load > 0 else 0.0
-
-    return {
-        "it_load_mw": round(it_load, 3),
-        "solar_mw": round(solar_gen, 3),
-        "wind_mw": round(wind_gen, 3),
-        "grid_mw": round(grid_import, 3),
-        "surplus_mw": round(surplus, 3),
-        "renewable_pct": round(ren_pct, 1),
-    }
-
 
 # ---------------------------------------------------------------------------
 # Main analysis function
@@ -317,18 +346,19 @@ def _renewable_hourly(
 def analyze_location(
     lat: float,
     lng: float,
-    dc_capacity_mw: float = 100.0,
     servers: int = 50_000,
     ai_intensity: float = 0.70,
 ) -> dict[str, Any]:
     """Full location suitability analysis for a hyperscaler data centre.
 
+    IT load capacity is derived from server count and AI intensity using the
+    GPU power curve (PDF §2.1): E_GPU(u) = 0.8 + 5.2·u^1.2 + 0.6·u [kW/server].
+
     Args:
         lat: Latitude in decimal degrees.
         lng: Longitude in decimal degrees.
-        dc_capacity_mw: Desired IT load capacity in MW.
-        servers: Number of servers (affects demand model).
-        ai_intensity: Fraction of AI workloads (0–1), increases load.
+        servers: Number of GPU servers.
+        ai_intensity: AI workload utilisation (0–1).
 
     Returns:
         Nested dict with location metadata, scores, weather stats,
@@ -351,60 +381,71 @@ def analyze_location(
     avg_wind = statistics.mean(winds) if winds else 5.0
     avg_irr = statistics.mean(total_irr) if total_irr else 100.0
     temp_std = statistics.stdev(temps) if len(temps) > 1 else 5.0
-    peak_irr = max(total_irr) if total_irr else 500.0
 
-    # 3. Individual scores
-    s_solar = score_solar(lat, avg_irr)
-    s_wind = score_wind(avg_wind)
+    # 3. Regional plant stats (CPU-only, no network – plants already in memory)
+    regional_stats = get_regional_plant_stats(lat, lng)
+
+    # 4. Individual scores (load-independent)
     s_climate = score_climate(avg_temp, temp_std)
-    s_grid = score_grid(loc_info["country_code"])
+    s_grid = score_grid_regional(regional_stats["renewable_mw"], regional_stats["total_mw"])
 
-    composite = round(s_solar * 0.28 + s_wind * 0.28 + s_climate * 0.24 + s_grid * 0.20, 1)
+    # 5. IT load capacity from server count × AI intensity (PDF §2.1 GPU power curve)
+    u = ai_intensity
+    kw_per_server = 0.8 + 5.2 * u ** 1.2 + 0.6 * u
+    dc_capacity_mw = servers * kw_per_server / 1000
 
-    # 4. Sizing the renewable plant to cover ~80 % of demand on average
     pue = estimate_pue(avg_temp)
     effective_demand_mw = dc_capacity_mw * pue
 
-    # Scale installed capacity proportional to score (better site → fewer panels/turbines needed)
-    solar_installed = effective_demand_mw * 0.70 * (s_solar / 100)
-    wind_installed = effective_demand_mw * 0.70 * (s_wind / 100)
+    # 6. Load-coverage score: actual regional renewable capacity vs. DC IT load.
+    #    Uses the same data as the Regional Grid section → score and display are consistent.
+    coverage_ratio_pct = (
+        min(200.0, regional_stats["renewable_mw"] / dc_capacity_mw * 100)
+        if dc_capacity_mw > 0 else 0.0
+    )
+    s_load_coverage = round(min(100.0, coverage_ratio_pct), 1)
 
-    # 5. Hourly time series (7 days × 24 h = 168 points)
-    time_series: list[dict[str, Any]] = []
-    for i in range(min(168, len(temps))):
-        hour_of_day = i % 24
-        hourly_result = _renewable_hourly(
-            hour_of_day,
-            total_irr[i] if i < len(total_irr) else avg_irr,
-            winds[i] if i < len(winds) else avg_wind,
-            effective_demand_mw,
-            solar_installed,
-            wind_installed,
-        )
-        time_series.append({
-            "hour": i,
-            "timestamp": hourly["timestamps"][i] if i < len(hourly["timestamps"]) else "",
-            "temperature_c": round(temps[i] if i < len(temps) else avg_temp, 1),
-            "wind_speed_ms": round(winds[i] if i < len(winds) else avg_wind, 1),
-            "irradiance_wm2": round(total_irr[i] if i < len(total_irr) else avg_irr, 1),
-            **hourly_result,
-        })
+    # 7. Composite score – three dimensions for a grid-connected hyperscaler DC.
+    # Grid renewable mix (40%) + actual load coverage (35%) + cooling climate (25%).
+    composite = round(
+        s_grid            * 0.40
+        + s_load_coverage * 0.35
+        + s_climate       * 0.25,
+        1,
+    )
 
-    avg_ren_pct = statistics.mean(ts["renewable_pct"] for ts in time_series) if time_series else 0.0
+    # 9. Regional grid coverage + fuel mix for frontend chart (all sources)
+    chart_fuel_mw: dict[str, float] = {}
+    nonren_mw = 0.0
+    for fuel, mw in regional_stats["fuel_mw"].items():
+        if fuel in _CHART_FUELS:
+            chart_fuel_mw[fuel] = round(chart_fuel_mw.get(fuel, 0.0) + mw, 1)
+        elif fuel in _RENEWABLE_FUELS:
+            chart_fuel_mw["Other Renewable"] = round(chart_fuel_mw.get("Other Renewable", 0.0) + mw, 1)
+        else:
+            nonren_mw += mw
+    if nonren_mw > 0:
+        chart_fuel_mw["Non-Renewable"] = round(nonren_mw, 1)
+    chart_fuel_mw = dict(sorted(chart_fuel_mw.items(), key=lambda x: -x[1]))
 
-    # 6. Energy mix summary
-    total_solar = sum(ts["solar_mw"] for ts in time_series)
-    total_wind = sum(ts["wind_mw"] for ts in time_series)
-    total_grid = sum(ts["grid_mw"] for ts in time_series)
-    total_gen = total_solar + total_wind + total_grid
-    mix = {
-        "solar_pct": round(total_solar / total_gen * 100, 1) if total_gen > 0 else 0,
-        "wind_pct": round(total_wind / total_gen * 100, 1) if total_gen > 0 else 0,
-        "grid_pct": round(total_grid / total_gen * 100, 1) if total_gen > 0 else 0,
+    regional_grid = {
+        "radius_km": int(_REGIONAL_RADIUS_KM),
+        "total_mw": round(regional_stats["total_mw"], 1),
+        "renewable_mw": round(regional_stats["renewable_mw"], 1),
+        "renewable_fraction_pct": round(
+            regional_stats["renewable_mw"] / regional_stats["total_mw"] * 100
+            if regional_stats["total_mw"] > 0 else 0.0, 1
+        ),
+        "plant_count": regional_stats["plant_count"],
+        "fuel_mix_mw": chart_fuel_mw,
+        "it_load_mw": round(dc_capacity_mw, 1),
+        "coverage_ratio_pct": round(coverage_ratio_pct, 1),
+        "coverage_possible": regional_stats["renewable_mw"] >= dc_capacity_mw,
+        "top_plants": regional_stats["top_plants"],
     }
 
-    # 7. Recommendation text
-    label, recommendation = _recommendation(composite, s_solar, s_wind, s_climate, s_grid)
+    # 8. Recommendation text
+    label, recommendation = _recommendation(composite, s_climate, s_grid, s_load_coverage)
 
     return {
         "location": {
@@ -413,10 +454,9 @@ def analyze_location(
             **loc_info,
         },
         "scores": {
-            "solar": s_solar,
-            "wind": s_wind,
             "climate": s_climate,
             "grid": s_grid,
+            "load_coverage": s_load_coverage,
             "composite": composite,
             "label": label,
         },
@@ -424,70 +464,62 @@ def analyze_location(
             "avg_temperature_c": round(avg_temp, 1),
             "avg_wind_speed_ms": round(avg_wind, 1),
             "avg_irradiance_wm2": round(avg_irr, 1),
-            "peak_irradiance_wm2": round(peak_irr, 1),
             "temp_stdev_c": round(temp_std, 1),
         },
         "energy": {
-            "dc_it_capacity_mw": dc_capacity_mw,
+            "dc_it_capacity_mw": round(dc_capacity_mw, 1),
             "estimated_pue": round(pue, 2),
             "effective_demand_mw": round(effective_demand_mw, 1),
-            "solar_installed_mw": round(solar_installed, 1),
-            "wind_installed_mw": round(wind_installed, 1),
-            "avg_renewable_pct": round(avg_ren_pct, 1),
-            "energy_mix": mix,
         },
+        "regional_grid": regional_grid,
         "recommendation": recommendation,
-        "time_series": time_series,
     }
 
 
 def _recommendation(
     composite: float,
-    solar: float,
-    wind: float,
     climate: float,
     grid: float,
+    load_coverage: float,
 ) -> tuple[str, str]:
     """Generate a label and short recommendation string."""
     if composite >= 80:
         label = "Excellent"
         msg = (
             "This site is highly suitable for a renewable-powered hyperscaler data centre. "
-            "Strong renewable potential combined with reliable grid infrastructure minimises "
-            "dependency on fossil fallback capacity."
+            "The regional grid is predominantly renewable and capacity is sufficient to cover "
+            "the projected IT load with minimal fossil fallback."
         )
     elif composite >= 65:
         label = "Good"
         weak = []
-        if solar < 60:
-            weak.append("solar irradiance")
-        if wind < 60:
-            weak.append("wind resources")
         if climate < 60:
-            weak.append("cooling climate")
-        if grid < 70:
-            weak.append("grid reliability")
+            weak.append("cooling conditions")
+        if grid < 60:
+            weak.append("renewable grid mix")
+        if load_coverage < 60:
+            weak.append("renewable load coverage")
         weak_str = " and ".join(weak) if weak else "some dimensions"
         msg = (
-            f"This is a good candidate site. Limited {weak_str} may require additional "
-            "battery or hydrogen buffer storage to reach full renewable coverage."
+            f"Good candidate site. Limitations in {weak_str} may require long-term PPAs "
+            "or additional storage to reach full renewable coverage."
         )
     elif composite >= 50:
         label = "Fair"
         msg = (
-            "Moderate suitability. A mix of on-site renewables and long-term PPAs would be "
-            "necessary. Consider hydrogen storage to bridge renewable intermittency gaps."
+            "Moderate suitability. The regional grid lacks sufficient renewable capacity "
+            "to cover the IT load. Long-term PPAs and storage investment would be required."
         )
     elif composite >= 35:
         label = "Poor"
         msg = (
-            "Below-average renewable potential or infrastructure limitations make this site "
-            "challenging for carbon-neutral operations at hyperscale."
+            "Below-average renewable grid infrastructure or poor cooling conditions make "
+            "this site challenging for carbon-neutral hyperscale operations."
         )
     else:
         label = "Unsuitable"
         msg = (
-            "This site faces severe constraints (e.g. extreme climate, poor grid, low renewable "
-            "potential). Alternative locations should be prioritised."
+            "This site faces severe constraints: insufficient renewable grid capacity, "
+            "extreme climate, or a combination of both. Alternative locations should be prioritised."
         )
     return label, msg
