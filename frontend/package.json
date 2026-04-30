@@ -11,8 +11,7 @@
   },
   "dependencies": {
     "chart.js": "^4.4.4",
-    "leaflet": "^1.9.4",
-    "numpy": "^0.0.1"
+    "leaflet": "^1.9.4"
   },
   "devDependencies": {
     "playwright": "^1.58.2",

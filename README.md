@@ -12,23 +12,99 @@ Research webapp to find optimal locations for hyperscaler AI data centers based 
 
 ## Getting Started
 
+### Prerequisites
+
+- **Python** 3.10 or newer — [python.org](https://www.python.org/downloads/)
+- **Node.js** 18 or newer (includes npm) — [nodejs.org](https://nodejs.org/)
+- **Git**
+
+Verify your installation:
+```bash
+python --version    # or python3 --version
+node --version
+npm --version
+```
+
+### Quick Start (recommended)
+
+Two cross-platform helper scripts handle the full setup. They work on **macOS, Linux, and Windows**.
+
 ```bash
 git clone https://github.com/YOUR_USERNAME/Digital-Twin-Renewable-Data-Center.git
 cd Digital-Twin-Renewable-Data-Center
+
+python setup.py    # one-time: creates .venv, installs all dependencies
+python start.py    # starts backend + frontend in parallel
 ```
 
-**Backend** (from project root):
+> On some systems the Python launcher is called `python3` instead of `python`. Use whichever resolves to Python 3.10+.
+
+Open **http://localhost:5173** in your browser. Press **Ctrl+C** in the terminal to stop both servers.
+
+### Manual Setup (alternative)
+
+If you prefer to run the steps yourself:
+
+**1. Create and activate a virtual environment**
+
+macOS / Linux:
 ```bash
-.venv/bin/uvicorn backend.app:app --reload
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
-**Frontend** (in a second terminal):
+Windows (PowerShell):
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+Windows (cmd):
+```cmd
+python -m venv .venv
+.venv\Scripts\activate.bat
+```
+
+**2. Install backend dependencies**
+```bash
+pip install -r requirements.txt
+```
+
+**3. Install frontend dependencies**
+```bash
+cd frontend
+npm install
+cd ..
+```
+
+**4. Run the app — two terminals**
+
+Terminal 1 (backend):
+```bash
+# macOS / Linux
+.venv/bin/uvicorn backend.app:app --reload
+# Windows
+.venv\Scripts\uvicorn backend.app:app --reload
+```
+
+Terminal 2 (frontend):
 ```bash
 cd frontend
 npm run dev
 ```
 
 Open **http://localhost:5173** in your browser.
+
+### Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| `python: command not found` | Try `python3` instead, or install Python from [python.org](https://www.python.org/downloads/). |
+| `npm: command not found` | Install Node.js from [nodejs.org](https://nodejs.org/). |
+| Windows: "running scripts is disabled" when activating venv | Run PowerShell as admin and execute `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. |
+| Port 8000 or 5173 already in use | Stop the other process, or change the port (`--port 8001` for uvicorn; edit `vite.config.js` for Vite). |
+| Frontend cannot reach backend | Make sure the backend is running on `localhost:8000` and CORS is allowed (default in `backend/app.py`). |
+| `pip install` fails on a corporate network | Configure your proxy: `pip install --proxy http://user:pass@proxy:port -r requirements.txt`. |
 ## Architecture 🏛️
 
 ### Frontend – Vite + Leaflet + Chart.js (vanilla JS)
