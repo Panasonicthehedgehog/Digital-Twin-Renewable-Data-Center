@@ -139,12 +139,12 @@ def compute_grid(
     # Build full grids
     solar: list[list[float]] = []
     wind: list[list[float]] = []
-    composite: list[list[float]] = []
+    potential: list[list[float]] = []
 
     for ri in range(rows):
         solar_row: list[float] = []
         wind_row: list[float] = []
-        comp_row: list[float] = []
+        pot_row: list[float] = []
         for cj in range(cols):
             pt = sparse.get((ri, cj))
             if pt is not None:
@@ -156,10 +156,10 @@ def compute_grid(
             sw = score_wind(wnd)
             solar_row.append(ss)
             wind_row.append(sw)
-            comp_row.append(round(ss * 0.6 + sw * 0.4, 1))
+            pot_row.append(round(ss * 0.6 + sw * 0.4, 1))
         solar.append(solar_row)
         wind.append(wind_row)
-        composite.append(comp_row)
+        potential.append(pot_row)
 
     return {
         "bounds": {
@@ -173,7 +173,7 @@ def compute_grid(
         "cols": cols,
         "solar": solar,
         "wind": wind,
-        "composite": composite,
+        "potential": potential,
         "vmin": 0,
         "vmax": 100,
     }
