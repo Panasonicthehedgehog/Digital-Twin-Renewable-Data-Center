@@ -35,6 +35,26 @@ def test_analyze_location_renames_to_suitability_and_uses_effective_demand(monke
     assert "composite" not in result["scores"]
     assert "effective_demand_mw" in result["regional_grid"]
     # coverage uses effective demand (= dc_capacity * PUE), not raw IT load
-    eff = result["regional_grid"]["effective_demand_mw"]
-    expected = round(min(100.0, 800.0 / eff * 100), 1)
+    rg = result["regional_grid"]
+    expected = ls.score_load_coverage(rg["effective_renewable_mw"], rg["effective_demand_mw"])
+    assert result["scores"]["load_coverage"] == expected
+
+
+def test_analyze_location_coverage_uses_expected_generation(monkeypatch):
+    monkeypatch.setattr(ls, "get_location_info",
+                        lambda lat, lng: {"city": "X", "country": "Y",
+                                          "country_code": "DE", "display": "X, Y"})
+    monkeypatch.setattr(ls, "fetch_weather_forecast", _fake_weather)
+    monkeypatch.setattr(ls, "get_regional_plant_stats",
+                        lambda lat, lng: {"fuel_mw": {"Solar": 500.0, "Wind": 300.0},
+                                          "total_mw": 1000.0, "renewable_mw": 800.0,
+                                          "plant_count": 5, "top_plants": []})
+    result = ls.analyze_location(0.0, 0.0, servers=1000, ai_intensity=0.5)
+
+    rg = result["regional_grid"]
+    assert "effective_renewable_mw" in rg
+    # expected generation must be below nameplate (CFs < 1)
+    assert rg["effective_renewable_mw"] < rg["renewable_mw"]
+    # load_coverage is derived from expected generation, not nameplate
+    expected = ls.score_load_coverage(rg["effective_renewable_mw"], rg["effective_demand_mw"])
     assert result["scores"]["load_coverage"] == expected

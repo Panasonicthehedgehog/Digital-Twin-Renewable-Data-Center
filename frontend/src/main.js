@@ -107,9 +107,9 @@ function updateAllDerivedValues(aiIntensity, servers) {
 
   for (const loc of state.locations) {
     const pue = estimatePue(loc.weather.avg_temperature_c);
-    const renMw = loc.regional_grid?.renewable_mw ?? 0;
+    const renGenMw = loc.regional_grid?.effective_renewable_mw ?? 0;  // CF-weighted, slider-independent
     const effMw = dcMw * pue;                       // total facility demand incl. cooling
-    const covPct = effMw > 0 ? renMw / effMw * 100 : 0;
+    const covPct = effMw > 0 ? renGenMw / effMw * 100 : 0;
 
     loc.energy.dc_it_capacity_mw = Math.round(dcMw * 10) / 10;
     loc.energy.estimated_pue = Math.round(pue * 100) / 100;
@@ -117,7 +117,7 @@ function updateAllDerivedValues(aiIntensity, servers) {
     loc.regional_grid.it_load_mw = Math.round(dcMw * 10) / 10;
     loc.regional_grid.effective_demand_mw = Math.round(effMw * 10) / 10;
     loc.regional_grid.coverage_ratio_pct = Math.round(covPct * 10) / 10;
-    loc.regional_grid.coverage_possible = renMw >= effMw;
+    loc.regional_grid.coverage_possible = renGenMw >= effMw;
     loc.scores.load_coverage = Math.round(Math.min(100, covPct) * 10) / 10;
     // Site Suitability depends on load_coverage (35%) — recompute so it reflects slider changes
     loc.scores.suitability = Math.round(
@@ -417,9 +417,11 @@ function renderRegionalMixChart(rg) {
   document.getElementById('regional-coverage-pct').textContent =
     `${rg.coverage_ratio_pct.toFixed(1)} %${isOverflow ? ' +' : ''}`;
   document.getElementById('regional-ren-label').textContent =
-    `${Math.round(rg.renewable_mw).toLocaleString()} MW renewable`;
+    `≈ ${Math.round(rg.effective_renewable_mw).toLocaleString()} MW expected`;
   document.getElementById('regional-it-label').textContent =
     `${Math.round(rg.effective_demand_mw).toLocaleString()} MW needed`;
+  document.getElementById('regional-nameplate-label').textContent =
+    `${Math.round(rg.renewable_mw).toLocaleString()} MW installed (nameplate)`;
   document.getElementById('regional-radius').textContent = `${rg.radius_km} km radius`;
 
   const badge = document.getElementById('regional-coverage-badge');

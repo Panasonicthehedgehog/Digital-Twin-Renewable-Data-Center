@@ -139,6 +139,60 @@ def score_load_coverage(renewable_mw: float, effective_demand_mw: float) -> floa
     return round(min(100.0, renewable_mw / effective_demand_mw * 100), 1)
 
 
+# Static capacity factors for dispatchable / non-weather renewable fuels.
+_STATIC_CAPACITY_FACTORS: dict[str, float] = {
+    "Hydro": 0.40,
+    "Biomass": 0.60,
+    "Geothermal": 0.80,
+    "Wave and Tidal": 0.30,
+}
+_DEFAULT_RENEWABLE_CF = 0.40
+
+
+def solar_capacity_factor(avg_irr_wm2: float) -> float:
+    """Solar CF from mean irradiance (W/m²): normalised against STC (1000 W/m²)
+    with a 0.80 performance ratio (system/inverter losses); capped at 0.40."""
+    return min(0.40, max(0.0, avg_irr_wm2) / 1000.0 * 0.80)
+
+
+def wind_capacity_factor(avg_wind_ms: float) -> float:
+    """Wind CF from 10 m mean wind speed via a simplified power curve.
+
+    Applies a 1.4× shear correction to ~100 m hub height (power-law α≈0.14),
+    then a piecewise curve: cut-in 3 m/s, rated 12 m/s (CF 0.55), cut-out 25 m/s.
+    This is a simplified mean-wind proxy, not a time-series integration.
+    """
+    v_hub = max(0.0, avg_wind_ms) * 1.4
+    if v_hub <= 3.0 or v_hub > 25.0:
+        return 0.0
+    if v_hub < 12.0:
+        return (v_hub - 3.0) / 9.0 * 0.55
+    return 0.55
+
+
+def expected_generation_mw(
+    fuel_mw: dict[str, float], avg_irr_wm2: float, avg_wind_ms: float
+) -> float:
+    """Expected mean renewable generation (MW): per-fuel nameplate capacity
+    weighted by its capacity factor. Solar/Wind CFs are weather-derived; other
+    renewable fuels use static literature CFs. Non-renewable fuels are ignored.
+    """
+    solar_cf = solar_capacity_factor(avg_irr_wm2)
+    wind_cf = wind_capacity_factor(avg_wind_ms)
+    total = 0.0
+    for fuel, mw in fuel_mw.items():
+        if fuel == "Solar":
+            total += mw * solar_cf
+        elif fuel == "Wind":
+            total += mw * wind_cf
+        elif fuel in _STATIC_CAPACITY_FACTORS:
+            total += mw * _STATIC_CAPACITY_FACTORS[fuel]
+        elif fuel in _RENEWABLE_FUELS:
+            total += mw * _DEFAULT_RENEWABLE_CF
+        # non-renewable fuels are ignored
+    return round(total, 1)
+
+
 # ---------------------------------------------------------------------------
 # Nominatim reverse geocoding
 # ---------------------------------------------------------------------------
@@ -406,13 +460,18 @@ def analyze_location(
     pue = estimate_pue(avg_temp)
     effective_demand_mw = dc_capacity_mw * pue
 
-    # 6. Load-coverage score: actual regional renewable capacity vs. DC total demand.
-    #    Uses effective demand (= dc_capacity × PUE), which includes cooling overhead.
+    # 6. Load-coverage score: expected regional renewable *generation* vs. DC total demand.
+    #    Nameplate capacity is weighted by per-fuel capacity factors (Solar/Wind
+    #    weather-derived; others static) before comparing to effective demand
+    #    (= dc_capacity × PUE, including cooling overhead).
+    effective_renewable_mw = expected_generation_mw(
+        regional_stats["fuel_mw"], avg_irr, avg_wind
+    )
     coverage_ratio_pct = (
-        regional_stats["renewable_mw"] / effective_demand_mw * 100
+        effective_renewable_mw / effective_demand_mw * 100
         if effective_demand_mw > 0 else 0.0
     )
-    s_load_coverage = score_load_coverage(regional_stats["renewable_mw"], effective_demand_mw)
+    s_load_coverage = score_load_coverage(effective_renewable_mw, effective_demand_mw)
 
     # 7. Site Suitability score – three dimensions for a grid-connected hyperscaler DC.
     # Grid renewable mix (40%) + actual load coverage (35%) + cooling climate (25%).
@@ -441,6 +500,7 @@ def analyze_location(
         "radius_km": int(_REGIONAL_RADIUS_KM),
         "total_mw": round(regional_stats["total_mw"], 1),
         "renewable_mw": round(regional_stats["renewable_mw"], 1),
+        "effective_renewable_mw": round(effective_renewable_mw, 1),
         "renewable_fraction_pct": round(
             regional_stats["renewable_mw"] / regional_stats["total_mw"] * 100
             if regional_stats["total_mw"] > 0 else 0.0, 1
@@ -450,7 +510,7 @@ def analyze_location(
         "it_load_mw": round(dc_capacity_mw, 1),
         "effective_demand_mw": round(effective_demand_mw, 1),
         "coverage_ratio_pct": round(coverage_ratio_pct, 1),
-        "coverage_possible": regional_stats["renewable_mw"] >= effective_demand_mw,
+        "coverage_possible": effective_renewable_mw >= effective_demand_mw,
         "top_plants": regional_stats["top_plants"],
     }
 
