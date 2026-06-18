@@ -108,19 +108,25 @@ function updateAllDerivedValues(aiIntensity, servers) {
   for (const loc of state.locations) {
     const pue = estimatePue(loc.weather.avg_temperature_c);
     const renMw = loc.regional_grid?.renewable_mw ?? 0;
-    const covPct = dcMw > 0 ? renMw / dcMw * 100 : 0;
+    const effMw = dcMw * pue;                       // total facility demand incl. cooling
+    const covPct = effMw > 0 ? renMw / effMw * 100 : 0;
 
     loc.energy.dc_it_capacity_mw = Math.round(dcMw * 10) / 10;
     loc.energy.estimated_pue = Math.round(pue * 100) / 100;
-    loc.energy.effective_demand_mw = Math.round(dcMw * pue * 10) / 10;
+    loc.energy.effective_demand_mw = Math.round(effMw * 10) / 10;
     loc.regional_grid.it_load_mw = Math.round(dcMw * 10) / 10;
+    loc.regional_grid.effective_demand_mw = Math.round(effMw * 10) / 10;
     loc.regional_grid.coverage_ratio_pct = Math.round(covPct * 10) / 10;
-    loc.regional_grid.coverage_possible = renMw >= dcMw;
+    loc.regional_grid.coverage_possible = renMw >= effMw;
     loc.scores.load_coverage = Math.round(Math.min(100, covPct) * 10) / 10;
+    // Site Suitability depends on load_coverage (35%) — recompute so it reflects slider changes
+    loc.scores.suitability = Math.round(
+      (loc.scores.grid * 0.40 + loc.scores.load_coverage * 0.35 + loc.scores.climate * 0.25) * 10
+    ) / 10;
 
     // Refresh marker if this location is on the map
     const marker = state.markers.get(loc._id);
-    if (marker) marker.setIcon(createMarkerIcon(loc.scores.composite));
+    if (marker) marker.setIcon(createMarkerIcon(loc.scores.suitability));
   }
 }
 
@@ -211,7 +217,7 @@ function createMarkerIcon(score) {
 
 function addMapMarker(locData) {
   const { lat, lng } = locData.location;
-  const score = locData.scores.composite;
+  const score = locData.scores.suitability;
   const id = locData._id;
 
   const marker = L.marker([lat, lng], { icon: createMarkerIcon(score) });
@@ -287,16 +293,16 @@ function showDetailPanel(locData) {
 
   // Gauge
   const arc = document.getElementById('gauge-arc');
-  const offset = CIRCUMFERENCE * (1 - s.composite / 100);
+  const offset = CIRCUMFERENCE * (1 - s.suitability / 100);
   arc.style.strokeDashoffset = offset;
-  arc.style.stroke = scoreColor(s.composite);
-  document.getElementById('gauge-score').textContent = s.composite;
+  arc.style.stroke = scoreColor(s.suitability);
+  document.getElementById('gauge-score').textContent = s.suitability;
 
   // Badge
   const badge = document.getElementById('score-badge');
   badge.innerHTML = `
-    <span class="badge-value" style="color:${scoreColor(s.composite)}">${scoreLabel(s.composite)}</span>
-    <span class="badge-label">Composite: ${s.composite}/100</span>
+    <span class="badge-value" style="color:${scoreColor(s.suitability)}">${scoreLabel(s.suitability)}</span>
+    <span class="badge-label">Site Suitability: ${s.suitability}/100</span>
     <span class="badge-country">${locData.location.city}, ${locData.location.country}</span>
   `;
 
@@ -314,7 +320,7 @@ function showDetailPanel(locData) {
   // Recommendation
   const rec = document.getElementById('recommendation');
   rec.textContent = locData.recommendation;
-  rec.className = `recommendation ${recClass(s.composite)}`;
+  rec.className = `recommendation ${recClass(s.suitability)}`;
 
   // Charts
   if (locData.regional_grid) {
@@ -413,12 +419,12 @@ function renderRegionalMixChart(rg) {
   document.getElementById('regional-ren-label').textContent =
     `${Math.round(rg.renewable_mw).toLocaleString()} MW renewable`;
   document.getElementById('regional-it-label').textContent =
-    `${Math.round(rg.it_load_mw).toLocaleString()} MW needed`;
+    `${Math.round(rg.effective_demand_mw).toLocaleString()} MW needed`;
   document.getElementById('regional-radius').textContent = `${rg.radius_km} km radius`;
 
   const badge = document.getElementById('regional-coverage-badge');
   if (rg.coverage_possible) {
-    badge.textContent = '✓ Renewable capacity covers IT load';
+    badge.textContent = '✓ Renewable capacity covers facility demand';
     badge.style.color = '#16a34a';
   } else {
     badge.textContent = '✗ Grid backup required';
@@ -564,7 +570,7 @@ function renderSidebarList() {
   }
 
   container.innerHTML = state.locations.map(loc => {
-    const score = loc.scores.composite;
+    const score = loc.scores.suitability;
     const isActive = loc._id === state.activeId;
     return `
       <div class="loc-item ${isActive ? 'active-loc' : ''}" data-id="${loc._id}">
@@ -634,15 +640,15 @@ function renderCompareView() {
     const s = loc.scores;
     const w = loc.weather;
     const e = loc.energy;
-    const bg = scoreColor(s.composite) + '22';
-    const fg = scoreColor(s.composite);
+    const bg = scoreColor(s.suitability) + '22';
+    const fg = scoreColor(s.suitability);
     return `
       <tr>
         <td>
           <div class="table-loc-name">${loc.location.display}</div>
           <div class="table-loc-sub">${loc.location.lat.toFixed(2)}°, ${loc.location.lng.toFixed(2)}°</div>
         </td>
-        <td><span class="table-score" style="background:${bg};color:${fg}">${s.composite}</span></td>
+        <td><span class="table-score" style="background:${bg};color:${fg}">${s.suitability}</span></td>
         <td>${scoreMini(s.climate)}</td>
         <td>${scoreMini(s.grid)}</td>
         <td>${scoreMini(s.load_coverage ?? 0)}</td>
@@ -660,7 +666,7 @@ function renderCompareView() {
         <thead>
           <tr>
             <th>Location</th>
-            <th>Composite</th>
+            <th>Site Suitability</th>
             <th>🌡 Climate</th>
             <th>⚡ Grid</th>
             <th>🔋 Load Cover</th>
@@ -760,7 +766,7 @@ function bindUI() {
 
       // Update marker icon if score changed
       const marker = state.markers.get(loc._id);
-      if (marker) marker.setIcon(createMarkerIcon(result.scores.composite));
+      if (marker) marker.setIcon(createMarkerIcon(result.scores.suitability));
 
       // Sync comparison entry if present
       const cIdx = state.compared.findIndex(c => c._id === loc._id);
