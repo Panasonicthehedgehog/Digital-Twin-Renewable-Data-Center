@@ -31,7 +31,9 @@ Chart.register(
 // ─────────────────────────────────────────────────────────────────────────────
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
-const API_BASE = 'http://localhost:8000';
+// Empty base = same origin. In the packaged build FastAPI serves both the
+// frontend and the API on one port; in dev, vite.config.js proxies to :8000.
+const API_BASE = '';
 const CIRCUMFERENCE = 2 * Math.PI * 50; // SVG gauge circle r=50
 
 // ─────────────────────────────────────────────────────────────────────────────
