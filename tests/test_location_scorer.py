@@ -35,8 +35,8 @@ def test_analyze_location_renames_to_suitability_and_uses_effective_demand(monke
     assert "composite" not in result["scores"]
     assert "effective_demand_mw" in result["regional_grid"]
     # coverage uses effective demand (= dc_capacity * PUE), not raw IT load
-    eff = result["regional_grid"]["effective_demand_mw"]
-    expected = round(min(100.0, 800.0 / eff * 100), 1)
+    rg = result["regional_grid"]
+    expected = ls.score_load_coverage(rg["effective_renewable_mw"], rg["effective_demand_mw"])
     assert result["scores"]["load_coverage"] == expected
 
 
