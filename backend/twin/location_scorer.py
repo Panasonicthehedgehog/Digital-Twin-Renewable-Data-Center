@@ -323,7 +323,7 @@ def score_climate(avg_temp_c: float, temp_std_c: float) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Derived / composite metrics
+# Derived metrics
 # ---------------------------------------------------------------------------
 
 def estimate_pue(avg_temp_c: float) -> float:
