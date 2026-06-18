@@ -1,7 +1,9 @@
 name: Build Windows Executable
 
 on:
-  workflow_dispatch:        # manuell startbar im GitHub-UI
+  workflow_dispatch:        # manuell startbar im GitHub-UI (nur ab main)
+  pull_request:
+    branches: [main]        # baut automatisch auf dem Pull Request
   push:
     tags:
       - "v*"                # baut automatisch bei Versions-Tags
