@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .config import TwinConfig
@@ -47,7 +47,7 @@ class DigitalTwinEngine:
         self.config = config
         self.scenario = "normal"
         self.rng = random.Random(config.weather.seed)
-        self.current_time = datetime.now(UTC).replace(second=0, microsecond=0)
+        self.current_time = datetime.now(timezone.utc).replace(second=0, microsecond=0)
         self.step_index = 0
         self.battery_soc = config.energy.battery_initial_soc
         self.hydrogen_soc = 1.0 if config.energy.hydrogen_capacity_kwh > 0 else 0.0

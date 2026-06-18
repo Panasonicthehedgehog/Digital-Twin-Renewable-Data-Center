@@ -31,6 +31,14 @@ class LocationRequest(BaseModel):
     ai_intensity: float = Field(0.70, ge=0, le=1, description="AI workload fraction")
 
 
+class HeatmapGridRequest(BaseModel):
+    north: float = Field(..., ge=-90, le=90)
+    south: float = Field(..., ge=-90, le=90)
+    east: float = Field(..., ge=-180, le=180)
+    west: float = Field(..., ge=-180, le=180)
+    resolution: float | None = None
+
+
 class TwinRuntime:
     def __init__(self, config: TwinConfig) -> None:
         self.config = config
@@ -140,6 +148,26 @@ async def analyze_location(payload: LocationRequest) -> dict[str, Any]:
         raise HTTPException(status_code=504, detail="External weather API timeout. Please retry.")
     except requests.exceptions.RequestException as exc:
         raise HTTPException(status_code=502, detail=f"External API error: {exc}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/heatmap/grid")
+def heatmap_grid(payload: HeatmapGridRequest) -> dict[str, Any]:
+    """Return a grid of renewable-potential scores for a bounding box.
+
+    Used by the frontend to render a clickable heatmap overlay.
+    """
+    from backend.twin.heatmap import compute_grid
+
+    try:
+        return compute_grid(
+            north=payload.north,
+            south=payload.south,
+            east=payload.east,
+            west=payload.west,
+            resolution=payload.resolution,
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 

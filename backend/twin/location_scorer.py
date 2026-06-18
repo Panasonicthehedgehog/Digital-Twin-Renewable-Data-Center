@@ -400,7 +400,7 @@ def analyze_location(
     # 6. Load-coverage score: actual regional renewable capacity vs. DC IT load.
     #    Uses the same data as the Regional Grid section → score and display are consistent.
     coverage_ratio_pct = (
-        min(200.0, regional_stats["renewable_mw"] / dc_capacity_mw * 100)
+        regional_stats["renewable_mw"] / dc_capacity_mw * 100
         if dc_capacity_mw > 0 else 0.0
     )
     s_load_coverage = round(min(100.0, coverage_ratio_pct), 1)
