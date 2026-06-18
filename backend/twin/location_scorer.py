@@ -10,7 +10,6 @@ from __future__ import annotations
 import csv
 import math
 import statistics
-from pathlib import Path
 from typing import Any
 
 import requests

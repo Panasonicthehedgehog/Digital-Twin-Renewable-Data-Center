@@ -5,6 +5,8 @@
 #   pyinstaller datacenter-twin.spec
 # Output: dist/RenewableDataCenter.exe
 
+from PyInstaller.utils.hooks import collect_data_files
+
 block_cipher = None
 
 datas = [
@@ -12,8 +14,13 @@ datas = [
     ("config", "config"),
     ("data", "data"),
 ]
+# Bundle certifi's CA bundle so requests' HTTPS calls (Open-Meteo, Nominatim)
+# work in the frozen exe on a clean machine.
+datas += collect_data_files("certifi")
 
 hiddenimports = [
+    "requests",
+    "certifi",
     "uvicorn.logging",
     "uvicorn.loops",
     "uvicorn.loops.auto",
@@ -56,7 +63,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,   # UPX compression is a common antivirus/SmartScreen false-positive trigger
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,   # console doubles as the status/stop window
