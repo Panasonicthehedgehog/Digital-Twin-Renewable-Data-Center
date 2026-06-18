@@ -32,7 +32,7 @@ Two independent processes communicate via HTTP (frontend → backend REST + WebS
 
 ### Backend (`backend/`)
 - **`app.py`** – FastAPI app. Hosts two systems: (1) `TwinRuntime` for digital twin simulation steps/scenarios/config, and (2) the `POST /api/location/analyze` endpoint that delegates to `location_scorer`.
-- **`twin/location_scorer.py`** – The core location analysis engine. Fetches 7-day hourly forecasts from Open-Meteo, reverse-geocodes via Nominatim, computes four scores (solar, wind, climate, grid), and returns a composite score + 168-point time series. No API keys required.
+- **`twin/location_scorer.py`** – The core location analysis engine. Fetches 7-day forecasts from Open-Meteo, reverse-geocodes via Nominatim, and computes the **Site Suitability** score (climate, grid, load-coverage) from weather and regional power-plant data. Also provides `score_solar`/`score_wind`, reused by `heatmap.py` for the Renewable Potential overlay. No API keys required.
 - **`twin/core.py`** – `DigitalTwinEngine`: simulates energy balance across IT load → cooling → renewables → battery → hydrogen → grid, step by step. Scenarios (heatwave, dunkelflaute, grid_restriction, etc.) modify load/weather factors.
 - **`twin/config.py`** – Pydantic models for twin configuration, loaded from `config/default_config.yaml`.
 
@@ -45,8 +45,14 @@ Two independent processes communicate via HTTP (frontend → backend REST + WebS
 2. Backend calls Open-Meteo + Nominatim → scores → returns JSON with scores, time series, energy mix
 3. Frontend renders: SVG gauge, score bars, KPI chips, renewable bar, two Chart.js charts
 
-### Scoring Weights
-Composite = 28% solar + 28% wind + 24% climate + 20% grid (all 0–100)
+### Scoring — two distinct metrics
+The app computes two *different* metrics; neither is called "Composite".
+- **Renewable Potential** (heatmap overlay, `compute_grid` → key `potential`):
+  weather-based resource quality = 60% solar + 40% wind.
+- **Site Suitability** (click analysis, `analyze_location` → key `suitability`):
+  site fitness for a grid-connected DC = 40% grid + 35% load-coverage + 25% climate.
+Load-coverage compares regional renewable capacity to `effective_demand_mw`
+(IT load × PUE, i.e. including cooling).
 
 ### WebSocket
 `/ws/state` broadcasts simulation state every step; frontend does not currently consume this (it's wired for the twin dashboard use case, not the map view).
