@@ -39,8 +39,11 @@ def step(title: str) -> None:
 
 def check_prerequisites() -> None:
     step("Checking prerequisites")
-    if sys.version_info < (3, 10):
-        sys.exit(f"Python 3.10+ required, found {sys.version.split()[0]}")
+    PY_REQUIRED = (3, 10, 16)
+    if sys.version_info < PY_REQUIRED:
+        sys.exit(
+            f"Python 3.10.16+ required, found {sys.version.split()[0]}"
+        )
     print(f"Python {sys.version.split()[0]} OK")
 
     npm = shutil.which("npm")
@@ -81,6 +84,9 @@ def main() -> int:
         return e.returncode
 
     print("\nSetup complete. Run the app with:  python start.py")
+    print("\nNew in this version:")
+    print("  • Renewable Potential heatmap — toggleable colour overlay on the map")
+    print("  • Click any heatmap cell to run the full location analysis")
     return 0
 
 

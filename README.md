@@ -37,7 +37,7 @@ python setup.py    # one-time: creates .venv, installs all dependencies
 python start.py    # starts backend + frontend in parallel
 ```
 
-> On some systems the Python launcher is called `python3` instead of `python`. Use whichever resolves to Python 3.10+.
+> On some systems the Python launcher is called `python3` instead of `python`. Use whichever resolves to Python 3.10.16+.
 
 Open **http://localhost:5173** in your browser. Press **Ctrl+C** in the terminal to stop both servers.
 

@@ -85,7 +85,11 @@ def main() -> int:
 
     print("\nBackend:  http://localhost:8000")
     print("Frontend: http://localhost:5173")
-    print("Press Ctrl+C to stop.\n")
+    print("\nFeatures:")
+    print("  • Map click → location analysis with 7-day weather + grid scores")
+    print("  • Renewable Potential heatmap overlay — toggle in top-right layer control")
+    print("  • Compare up to 5 locations side by side")
+    print("\nPress Ctrl+C to stop.\n")
 
     shutdown = threading.Event()
 

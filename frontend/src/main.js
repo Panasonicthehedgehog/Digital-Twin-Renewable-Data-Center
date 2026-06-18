@@ -14,6 +14,8 @@ import {
 } from 'chart.js';
 import './styles.css';
 
+import { HeatmapLayer } from './heatmap.js';
+
 // Fix Leaflet default icons in Vite
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon   from 'leaflet/dist/images/marker-icon.png';
@@ -82,7 +84,42 @@ function dayLabels(timestamps) {
 function computeCapacityMw(aiIntensity, servers) {
   const u = aiIntensity / 100;
   const kwPerServer = 0.8 + 5.2 * Math.pow(u, 1.2) + 0.6 * u;
-  return Math.round(servers * kwPerServer / 1000);
+  return servers * kwPerServer / 1000;
+}
+
+function estimatePue(avgTempC) {
+  if (avgTempC < 5) return 1.10;
+  if (avgTempC < 10) return 1.12;
+  if (avgTempC < 15) return 1.16;
+  if (avgTempC < 20) return 1.22;
+  if (avgTempC < 25) return 1.32;
+  if (avgTempC < 30) return 1.48;
+  return 1.65;
+}
+
+// Recompute load-dependent fields for every stored location when sliders change.
+// Avoids re-fetching weather for all locations (slow) — just updates math client-side.
+function updateAllDerivedValues(aiIntensity, servers) {
+  const u = aiIntensity / 100;
+  const dcMw = computeCapacityMw(aiIntensity, servers);
+
+  for (const loc of state.locations) {
+    const pue = estimatePue(loc.weather.avg_temperature_c);
+    const renMw = loc.regional_grid?.renewable_mw ?? 0;
+    const covPct = dcMw > 0 ? renMw / dcMw * 100 : 0;
+
+    loc.energy.dc_it_capacity_mw = Math.round(dcMw * 10) / 10;
+    loc.energy.estimated_pue = Math.round(pue * 100) / 100;
+    loc.energy.effective_demand_mw = Math.round(dcMw * pue * 10) / 10;
+    loc.regional_grid.it_load_mw = Math.round(dcMw * 10) / 10;
+    loc.regional_grid.coverage_ratio_pct = Math.round(covPct * 10) / 10;
+    loc.regional_grid.coverage_possible = renMw >= dcMw;
+    loc.scores.load_coverage = Math.round(Math.min(100, covPct) * 10) / 10;
+
+    // Refresh marker if this location is on the map
+    const marker = state.markers.get(loc._id);
+    if (marker) marker.setIcon(createMarkerIcon(loc.scores.composite));
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -130,7 +167,7 @@ function initMap() {
   });
 
   // CartoDB Positron – clean, light basemap
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  const baseLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     attribution: '© <a href="https://openstreetmap.org">OSM</a> © <a href="https://carto.com">CARTO</a>',
     subdomains: 'abcd',
     minZoom: 2,
@@ -139,6 +176,15 @@ function initMap() {
   }).addTo(map);
 
   L.control.zoom({ position: 'topright' }).addTo(map);
+
+  // Heatmap overlay
+  const heatmapLayer = new HeatmapLayer({ opacity: 0.65 });
+  map.addLayer(heatmapLayer);
+
+  L.control.layers(null, { 'Renewable Potential': heatmapLayer }, {
+    position: 'topright',
+    collapsed: false,
+  }).addTo(map);
 
   map.on('click', handleMapClick);
 }
@@ -352,10 +398,16 @@ const _plantSort  = { col: 'distance_km', dir: 'asc' };
 const _plantState = { filter: 'renewable' }; // 'renewable' | 'all'
 
 function renderRegionalMixChart(rg) {
-  // Coverage bar
-  const capPct = Math.min(100, rg.coverage_ratio_pct);
-  document.getElementById('regional-ren-fill').style.width = `${capPct}%`;
-  document.getElementById('regional-coverage-pct').textContent = `${rg.coverage_ratio_pct.toFixed(1)} %`;
+  // Coverage bar — scales linearly 0–200% → 0–100% bar width, values >200% show full bar with "+"
+  const barPct = Math.min(200, rg.coverage_ratio_pct) / 2;
+  const isOverflow = rg.coverage_ratio_pct > 200;
+  const fill = document.getElementById('regional-ren-fill');
+  fill.style.width = `${barPct}%`;
+  fill.style.background = rg.coverage_possible
+    ? 'linear-gradient(90deg, #0ea5e9, #22c55e)'
+    : '#0ea5e9';
+  document.getElementById('regional-coverage-pct').textContent =
+    `${rg.coverage_ratio_pct.toFixed(1)} %${isOverflow ? ' +' : ''}`;
   document.getElementById('regional-ren-label').textContent =
     `${Math.round(rg.renewable_mw).toLocaleString()} MW renewable`;
   document.getElementById('regional-it-label').textContent =
@@ -364,10 +416,10 @@ function renderRegionalMixChart(rg) {
 
   const badge = document.getElementById('regional-coverage-badge');
   if (rg.coverage_possible) {
-    badge.textContent = '✓ Regionale Erneuerbaren decken IT Load';
+    badge.textContent = '✓ Renewable capacity covers IT load';
     badge.style.color = '#16a34a';
   } else {
-    badge.textContent = '✗ Netznachspeisung erforderlich';
+    badge.textContent = '✗ Grid backup required';
     badge.style.color = '#dc2626';
   }
 
@@ -400,7 +452,7 @@ function renderPlantTable(container) {
 
   const cols = [
     { key: 'name',        label: 'Name' },
-    { key: 'fuel',        label: 'Quelle' },
+    { key: 'fuel',        label: 'Source' },
     { key: 'capacity_mw', label: 'MW' },
     { key: 'distance_km', label: 'km' },
   ];
@@ -420,14 +472,14 @@ function renderPlantTable(container) {
       <span class="plant-cap">${Math.round(p.capacity_mw).toLocaleString()} MW</span>
       <span class="plant-dist">${p.distance_km} km</span>
     </div>`;
-  }).join('') : '<p style="font-size:11px;color:#94a3b8;padding:8px 0">Keine Anlagen gefunden.</p>';
+  }).join('') : '<p style="font-size:11px;color:#94a3b8;padding:8px 0">No plants found.</p>';
 
   const isRen = _plantState.filter === 'renewable';
   container.innerHTML = `
     <div class="plant-filter-row">
-      <span class="plant-filter-label">Kraftwerke</span>
-      <button class="plant-filter-btn ${isRen ? 'active' : ''}" data-filter="renewable">Nur Erneuerbar</button>
-      <button class="plant-filter-btn ${!isRen ? 'active' : ''}" data-filter="all">Alle</button>
+      <span class="plant-filter-label">Power Plants</span>
+      <button class="plant-filter-btn ${isRen ? 'active' : ''}" data-filter="renewable">Renewable Only</button>
+      <button class="plant-filter-btn ${!isRen ? 'active' : ''}" data-filter="all">All</button>
     </div>
     <div class="plant-header-row">${headerCells}</div>
     ${rows}
@@ -682,7 +734,7 @@ function bindUI() {
 
   function updateCapacityDisplay() {
     const mw = computeCapacityMw(Number(aiSlider.value), Number(serversSlider.value));
-    document.getElementById('cfg-capacity-val').textContent = `${mw.toLocaleString()} MW`;
+    document.getElementById('cfg-capacity-val').textContent = `${mw.toFixed(1)} MW`;
   }
 
   // Debounced re-analysis of the currently open location
@@ -722,6 +774,20 @@ function bindUI() {
   }
 
   function scheduleReanalyze() {
+    // First update ALL locations client-side (instant)
+    const ai = Number(aiSlider.value);
+    const sv = Number(serversSlider.value);
+    updateAllDerivedValues(ai, sv);
+
+    // Refresh UI for current view
+    if (state.activeId !== null) {
+      const loc = state.locations.find(l => l._id === state.activeId);
+      if (loc) showDetailPanel(loc);
+    }
+    renderSidebarList();
+    if (state.compared.length > 0) renderCompareView();
+
+    // Then re-fetch the active location from backend for fresh weather data
     clearTimeout(_reanalyzeTimer);
     _reanalyzeTimer = setTimeout(reanalyzeActive, 600);
   }
