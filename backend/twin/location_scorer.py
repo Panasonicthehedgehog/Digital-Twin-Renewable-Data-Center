@@ -460,13 +460,18 @@ def analyze_location(
     pue = estimate_pue(avg_temp)
     effective_demand_mw = dc_capacity_mw * pue
 
-    # 6. Load-coverage score: actual regional renewable capacity vs. DC total demand.
-    #    Uses effective demand (= dc_capacity × PUE), which includes cooling overhead.
+    # 6. Load-coverage score: expected regional renewable *generation* vs. DC total demand.
+    #    Nameplate capacity is weighted by per-fuel capacity factors (Solar/Wind
+    #    weather-derived; others static) before comparing to effective demand
+    #    (= dc_capacity × PUE, including cooling overhead).
+    effective_renewable_mw = expected_generation_mw(
+        regional_stats["fuel_mw"], avg_irr, avg_wind
+    )
     coverage_ratio_pct = (
-        regional_stats["renewable_mw"] / effective_demand_mw * 100
+        effective_renewable_mw / effective_demand_mw * 100
         if effective_demand_mw > 0 else 0.0
     )
-    s_load_coverage = score_load_coverage(regional_stats["renewable_mw"], effective_demand_mw)
+    s_load_coverage = score_load_coverage(effective_renewable_mw, effective_demand_mw)
 
     # 7. Site Suitability score – three dimensions for a grid-connected hyperscaler DC.
     # Grid renewable mix (40%) + actual load coverage (35%) + cooling climate (25%).
@@ -495,6 +500,7 @@ def analyze_location(
         "radius_km": int(_REGIONAL_RADIUS_KM),
         "total_mw": round(regional_stats["total_mw"], 1),
         "renewable_mw": round(regional_stats["renewable_mw"], 1),
+        "effective_renewable_mw": round(effective_renewable_mw, 1),
         "renewable_fraction_pct": round(
             regional_stats["renewable_mw"] / regional_stats["total_mw"] * 100
             if regional_stats["total_mw"] > 0 else 0.0, 1
@@ -504,7 +510,7 @@ def analyze_location(
         "it_load_mw": round(dc_capacity_mw, 1),
         "effective_demand_mw": round(effective_demand_mw, 1),
         "coverage_ratio_pct": round(coverage_ratio_pct, 1),
-        "coverage_possible": regional_stats["renewable_mw"] >= effective_demand_mw,
+        "coverage_possible": effective_renewable_mw >= effective_demand_mw,
         "top_plants": regional_stats["top_plants"],
     }
 
