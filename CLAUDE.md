@@ -51,8 +51,9 @@ The app computes two *different* metrics; neither is called "Composite".
   weather-based resource quality = 60% solar + 40% wind.
 - **Site Suitability** (click analysis, `analyze_location` → key `suitability`):
   site fitness for a grid-connected DC = 40% grid + 35% load-coverage + 25% climate.
-Load-coverage compares regional renewable capacity to `effective_demand_mw`
-(IT load × PUE, i.e. including cooling).
+Load-coverage compares regional renewable **expected generation** (nameplate ×
+per-fuel capacity factor; Solar/Wind weather-derived, others static) to
+`effective_demand_mw` (IT load × PUE, i.e. including cooling).
 
 ### WebSocket
 `/ws/state` broadcasts simulation state every step; frontend does not currently consume this (it's wired for the twin dashboard use case, not the map view).
