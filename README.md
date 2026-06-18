@@ -128,7 +128,8 @@ Open **http://localhost:5173** in your browser.
 
 ### Frontend – Vite + Leaflet + Chart.js (vanilla JS)
 - Interactive world map (CartoDB Positron basemap)
-- Click any location to trigger a live renewable energy suitability analysis
+- Renewable-potential heatmap overlay with location ranking
+- Click any location to trigger a live Site Suitability analysis
 - Sliding detail panel with score gauge, KPI chips, energy time series, and mix charts
 - Location comparison view (up to 5 sites)
 - Sidebar sliders for IT capacity (MW) and AI workload intensity
@@ -140,14 +141,26 @@ Open **http://localhost:5173** in your browser.
 
 ## Scoring Model
 
-Each location is scored on four dimensions (0–100):
+The app computes **two distinct metrics** (0–100) — they intentionally measure different things; neither is a single "composite".
+
+### Renewable Potential — heatmap overlay
+
+Weather-based resource quality of an *area*, independent of any specific data center.
+
+| Component | Weight | Basis |
+|-----------|--------|-------|
+| Solar | 60 % | Latitude band + 7-day avg. irradiance (Open-Meteo) |
+| Wind  | 40 % | 7-day avg. wind speed via a simplified power curve |
+
+### Site Suitability — click analysis
+
+Fitness of a *specific* location for a grid-connected renewable data center.
 
 | Dimension | Weight | Basis |
 |-----------|--------|-------|
-| Solar     | 28 %   | Latitude band + 7-day avg. shortwave irradiance (Open-Meteo) |
-| Wind      | 28 %   | 7-day avg. wind speed, cubic power law (optimal 7–12 m/s) |
-| Climate   | 24 %   | Avg. temperature effect on PUE (optimal 8–14 °C) |
-| Grid      | 20 %   | Country-level renewable grid reliability (ISO 3166-1 alpha-2 lookup) |
+| Grid (renewable mix) | 40 % | Renewable **share** of the regional generation mix within 100 km (WRI plant data) |
+| Load coverage | 35 % | Regional renewable **expected generation** (nameplate × per-fuel capacity factor) vs. the DC's effective demand (IT load × PUE) |
+| Climate | 25 % | Avg. temperature effect on cooling/PUE (cold favours free-air cooling) |
 
 > Scores reflect the **current 7-day forecast**, not annual averages — seasonal variation is intentional.
 
