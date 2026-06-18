@@ -12,6 +12,25 @@ Research webapp to find optimal locations for hyperscaler AI data centers based 
 
 ## Getting Started
 
+### Für Endnutzer: fertige Windows-App (kein Setup nötig)
+
+Wenn du die App nur **benutzen** willst (kein Python/Node nötig):
+
+1. Lade die Datei **`RenewableDataCenter.exe`** herunter
+   (GitHub → Actions → letzter „Build Windows Executable"-Lauf → Artefakt
+   `RenewableDataCenter-windows`, oder vom Release).
+2. **Doppelklick** auf die `.exe`.
+3. Beim ersten Start warnt Windows evtl. mit „Der Computer wurde durch
+   Windows geschützt" (unbekannter Herausgeber). Klicke auf
+   **„Weitere Informationen" → „Trotzdem ausführen"**.
+4. Es öffnet sich ein kleines schwarzes Fenster und nach einigen Sekunden
+   automatisch der Browser mit der App.
+5. **Wichtig:** Das schwarze Fenster geöffnet lassen, solange du die App
+   nutzt. Zum Beenden einfach das Fenster schließen.
+
+> Eine Internetverbindung ist erforderlich (Wetter- und Kartendaten).
+> Der erste Start dauert etwas länger, da sich die App intern entpackt.
+
 ### Prerequisites
 
 - **Python** 3.10 or newer — [python.org](https://www.python.org/downloads/)

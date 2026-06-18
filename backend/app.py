@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -12,8 +11,10 @@ import requests
 
 from backend.twin.config import TwinConfig, load_config, write_config
 from backend.twin.core import SCENARIOS, DigitalTwinEngine
+from backend.paths import resource_path
+from backend.static_serving import mount_frontend
 
-CONFIG_PATH = Path("config/default_config.yaml")
+CONFIG_PATH = resource_path("config/default_config.yaml")
 
 
 class ScenarioRequest(BaseModel):
@@ -182,3 +183,8 @@ async def ws_state(websocket: WebSocket) -> None:
             await websocket.receive_text()
     except WebSocketDisconnect:
         runtime.clients.discard(websocket)
+
+
+# Serve the built frontend (single-port desktop build). No-op in dev when the
+# build is absent; the Vite dev server serves the frontend there instead.
+mount_frontend(app, resource_path("frontend/dist"))

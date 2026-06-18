@@ -1,0 +1,52 @@
+name: Build Windows Executable
+
+on:
+  workflow_dispatch:        # manuell startbar im GitHub-UI (nur ab main)
+  pull_request:
+    branches: [main]        # baut automatisch auf dem Pull Request
+  push:
+    tags:
+      - "v*"                # baut automatisch bei Versions-Tags
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build executable
+        run: pyinstaller datacenter-twin.spec
+
+      - name: Upload executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RenewableDataCenter-windows
+          path: dist/RenewableDataCenter.exe
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/RenewableDataCenter.exe
