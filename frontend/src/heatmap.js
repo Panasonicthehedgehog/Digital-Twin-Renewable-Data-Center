@@ -128,9 +128,9 @@ export const HeatmapLayer = L.Layer.extend({
     if (this._map.getZoom() < this.options.minZoom) return;
 
     const g = this._grid;
-    if (!g || !g.composite) return;
+    if (!g || !g.potential) return;
 
-    const grid = g.composite;
+    const grid = g.potential;
     const { north, south, east, west } = g.bounds;
     const res = g.resolution;
 
