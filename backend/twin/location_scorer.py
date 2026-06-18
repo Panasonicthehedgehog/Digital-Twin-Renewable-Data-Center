@@ -131,6 +131,14 @@ def score_grid_regional(renewable_mw: float, total_mw: float) -> float:
     return round(fraction * 50.0 + capacity_score, 1)
 
 
+def score_load_coverage(renewable_mw: float, effective_demand_mw: float) -> float:
+    """Load-coverage score 0–100: regional renewable capacity vs. total facility
+    demand (IT load × PUE, i.e. including cooling overhead)."""
+    if effective_demand_mw <= 0:
+        return 0.0
+    return round(min(100.0, renewable_mw / effective_demand_mw * 100), 1)
+
+
 # ---------------------------------------------------------------------------
 # Nominatim reverse geocoding
 # ---------------------------------------------------------------------------
@@ -398,17 +406,17 @@ def analyze_location(
     pue = estimate_pue(avg_temp)
     effective_demand_mw = dc_capacity_mw * pue
 
-    # 6. Load-coverage score: actual regional renewable capacity vs. DC IT load.
-    #    Uses the same data as the Regional Grid section → score and display are consistent.
+    # 6. Load-coverage score: actual regional renewable capacity vs. DC total demand.
+    #    Uses effective demand (= dc_capacity × PUE), which includes cooling overhead.
     coverage_ratio_pct = (
-        regional_stats["renewable_mw"] / dc_capacity_mw * 100
-        if dc_capacity_mw > 0 else 0.0
+        regional_stats["renewable_mw"] / effective_demand_mw * 100
+        if effective_demand_mw > 0 else 0.0
     )
-    s_load_coverage = round(min(100.0, coverage_ratio_pct), 1)
+    s_load_coverage = score_load_coverage(regional_stats["renewable_mw"], effective_demand_mw)
 
-    # 7. Composite score – three dimensions for a grid-connected hyperscaler DC.
+    # 7. Site Suitability score – three dimensions for a grid-connected hyperscaler DC.
     # Grid renewable mix (40%) + actual load coverage (35%) + cooling climate (25%).
-    composite = round(
+    suitability = round(
         s_grid            * 0.40
         + s_load_coverage * 0.35
         + s_climate       * 0.25,
@@ -440,13 +448,14 @@ def analyze_location(
         "plant_count": regional_stats["plant_count"],
         "fuel_mix_mw": chart_fuel_mw,
         "it_load_mw": round(dc_capacity_mw, 1),
+        "effective_demand_mw": round(effective_demand_mw, 1),
         "coverage_ratio_pct": round(coverage_ratio_pct, 1),
-        "coverage_possible": regional_stats["renewable_mw"] >= dc_capacity_mw,
+        "coverage_possible": regional_stats["renewable_mw"] >= effective_demand_mw,
         "top_plants": regional_stats["top_plants"],
     }
 
     # 8. Recommendation text
-    label, recommendation = _recommendation(composite, s_climate, s_grid, s_load_coverage)
+    label, recommendation = _recommendation(suitability, s_climate, s_grid, s_load_coverage)
 
     return {
         "location": {
@@ -458,7 +467,7 @@ def analyze_location(
             "climate": s_climate,
             "grid": s_grid,
             "load_coverage": s_load_coverage,
-            "composite": composite,
+            "suitability": suitability,
             "label": label,
         },
         "weather": {
@@ -478,20 +487,20 @@ def analyze_location(
 
 
 def _recommendation(
-    composite: float,
+    suitability: float,
     climate: float,
     grid: float,
     load_coverage: float,
 ) -> tuple[str, str]:
     """Generate a label and short recommendation string."""
-    if composite >= 80:
+    if suitability >= 80:
         label = "Excellent"
         msg = (
             "This site is highly suitable for a renewable-powered hyperscaler data centre. "
             "The regional grid is predominantly renewable and capacity is sufficient to cover "
             "the projected IT load with minimal fossil fallback."
         )
-    elif composite >= 65:
+    elif suitability >= 65:
         label = "Good"
         weak = []
         if climate < 60:
@@ -505,13 +514,13 @@ def _recommendation(
             f"Good candidate site. Limitations in {weak_str} may require long-term PPAs "
             "or additional storage to reach full renewable coverage."
         )
-    elif composite >= 50:
+    elif suitability >= 50:
         label = "Fair"
         msg = (
             "Moderate suitability. The regional grid lacks sufficient renewable capacity "
             "to cover the IT load. Long-term PPAs and storage investment would be required."
         )
-    elif composite >= 35:
+    elif suitability >= 35:
         label = "Poor"
         msg = (
             "Below-average renewable grid infrastructure or poor cooling conditions make "
