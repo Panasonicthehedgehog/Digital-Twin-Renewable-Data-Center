@@ -15,6 +15,8 @@ from typing import Any
 
 import requests
 
+from backend.paths import resource_path
+
 # ---------------------------------------------------------------------------
 # Power plant database – loaded once at module startup from WRI global CSV
 # ---------------------------------------------------------------------------
@@ -31,7 +33,7 @@ _PLANT_DATA: list[tuple[float, float, float, str, bool]] = []
 
 
 def _load_plants() -> None:
-    csv_path = Path(__file__).parent.parent.parent / "data" / "all_power_plants_clean.csv"
+    csv_path = resource_path("data/all_power_plants_clean.csv")
     try:
         with open(csv_path, newline="", encoding="utf-8") as fh:
             for row in csv.DictReader(fh):

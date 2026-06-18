@@ -12,8 +12,9 @@ import requests
 
 from backend.twin.config import TwinConfig, load_config, write_config
 from backend.twin.core import SCENARIOS, DigitalTwinEngine
+from backend.paths import resource_path
 
-CONFIG_PATH = Path("config/default_config.yaml")
+CONFIG_PATH = resource_path("config/default_config.yaml")
 
 
 class ScenarioRequest(BaseModel):
