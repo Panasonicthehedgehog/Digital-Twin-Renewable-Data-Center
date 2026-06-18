@@ -121,14 +121,15 @@ def get_regional_plant_stats(lat: float, lng: float) -> dict[str, Any]:
 
 
 def score_grid_regional(renewable_mw: float, total_mw: float) -> float:
-    """Grid score 0–100 derived from actual regional plant data.
+    """Grid score 0–100 = renewable share of the regional generation mix.
 
-    50 pts for renewable fraction + 50 pts for absolute renewable capacity
-    (log-scaled, ceiling at 100 GW).
+    Measures only how clean the regional mix is (renewable fraction × 100).
+    Absolute renewable capacity is intentionally NOT scored here — sufficiency
+    for the specific datacenter load is captured separately by load-coverage,
+    keeping the two Site-Suitability dimensions independent (no double-counting).
     """
     fraction = renewable_mw / total_mw if total_mw > 0 else 0.0
-    capacity_score = min(50.0, math.log1p(renewable_mw) / math.log1p(100_000.0) * 50.0)
-    return round(fraction * 50.0 + capacity_score, 1)
+    return round(fraction * 100.0, 1)
 
 
 def score_load_coverage(renewable_mw: float, effective_demand_mw: float) -> float:

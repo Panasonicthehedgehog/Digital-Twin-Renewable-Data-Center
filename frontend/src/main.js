@@ -540,7 +540,7 @@ function renderCompareChart() {
       labels: names,
       datasets: [
         { label: 'Climate',       data: climate,   backgroundColor: '#10b981' },
-        { label: 'Grid',          data: grid,      backgroundColor: '#8b5cf6' },
+        { label: 'Renewable Mix',  data: grid,      backgroundColor: '#8b5cf6' },
         { label: 'Load Coverage', data: loadCover, backgroundColor: '#22c55e' },
       ],
     },
@@ -670,7 +670,7 @@ function renderCompareView() {
             <th>Location</th>
             <th>Site Suitability</th>
             <th>🌡 Climate</th>
-            <th>⚡ Grid</th>
+            <th>⚡ Renewable Mix</th>
             <th>🔋 Load Cover</th>
             <th>Avg Temp</th>
             <th>Wind Speed</th>

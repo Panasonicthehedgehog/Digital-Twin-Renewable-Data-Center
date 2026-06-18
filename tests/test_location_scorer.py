@@ -58,3 +58,24 @@ def test_analyze_location_coverage_uses_expected_generation(monkeypatch):
     # load_coverage is derived from expected generation, not nameplate
     expected = ls.score_load_coverage(rg["effective_renewable_mw"], rg["effective_demand_mw"])
     assert result["scores"]["load_coverage"] == expected
+
+
+def test_score_grid_regional_is_renewable_fraction():
+    assert ls.score_grid_regional(800.0, 1000.0) == 80.0
+    assert ls.score_grid_regional(50.0, 50.0) == 100.0      # fully renewable
+    assert ls.score_grid_regional(0.0, 0.0) == 0.0          # no plants -> guard
+
+
+def test_grid_and_coverage_are_decoupled(monkeypatch):
+    # Small but 100% renewable region + large DC: grid high, coverage low.
+    monkeypatch.setattr(ls, "get_location_info",
+                        lambda lat, lng: {"city": "X", "country": "Y",
+                                          "country_code": "DE", "display": "X, Y"})
+    monkeypatch.setattr(ls, "fetch_weather_forecast", _fake_weather)
+    monkeypatch.setattr(ls, "get_regional_plant_stats",
+                        lambda lat, lng: {"fuel_mw": {"Solar": 50.0},
+                                          "total_mw": 50.0, "renewable_mw": 50.0,
+                                          "plant_count": 1, "top_plants": []})
+    result = ls.analyze_location(0.0, 0.0, servers=200_000, ai_intensity=0.7)
+    assert result["scores"]["grid"] == 100.0
+    assert result["scores"]["load_coverage"] < 100.0
