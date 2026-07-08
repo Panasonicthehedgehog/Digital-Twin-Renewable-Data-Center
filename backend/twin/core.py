@@ -68,10 +68,14 @@ class DigitalTwinEngine:
 
         Each entry: (temp_c, wind_ms, solar_irradiance_wm2).
         The list wraps around if the simulation runs longer than its length.
-        Resets all cumulative counters.
+        Resets all cumulative counters and simulation clock.
         """
         self._weather_override = hourly_data
         self._weather_cursor = 0
+        self.step_index = 0
+        self.current_time = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        self.battery_soc = self.config.energy.battery_initial_soc
+        self.hydrogen_soc = 1.0 if self.config.energy.hydrogen_capacity_kwh > 0 else 0.0
         self._cum_it_kwh = 0.0
         self._cum_facility_kwh = 0.0
         self._cum_renewable_kwh = 0.0

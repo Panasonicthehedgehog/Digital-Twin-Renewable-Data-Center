@@ -10,22 +10,42 @@ from backend.app import app
 client = TestClient(app)
 
 
+def _mock_http_responder(url, *args, **kwargs):
+    """Return appropriate mock response based on URL."""
+    class MockResponse:
+        status_code = 200
+
+        def json(self):
+            if "nominatim" in url.lower():
+                return {
+                    "address": {
+                        "city": "Test City",
+                        "country": "Test Country",
+                        "country_code": "tc",
+                    }
+                }
+            # Open-Meteo
+            hourly = {
+                "temperature_2m": [15.0] * 168,
+                "windspeed_10m": [6.0] * 168,
+                "direct_radiation": [300.0] * 168,
+                "diffuse_radiation": [100.0] * 168,
+                "cloudcover": [30.0] * 168,
+                "precipitation": [0.0] * 168,
+                "time": [f"2026-01-01T{h:02d}:00" for h in range(24) for _ in range(7)][:168],
+            }
+            return {"hourly": hourly}
+
+        def raise_for_status(self):
+            pass
+
+    return MockResponse()
+
+
 @pytest.fixture(autouse=True)
-def _mock_weather():
-    """Mock Open-Meteo to return simple synthetic data (no network)."""
-    hourly = {
-        "temperature_2m": [15.0] * 168,
-        "windspeed_10m": [6.0] * 168,
-        "direct_radiation": [300.0] * 168,
-        "diffuse_radiation": [100.0] * 168,
-        "cloudcover": [30.0] * 168,
-        "precipitation": [0.0] * 168,
-        "time": [f"2026-01-01T{h:02d}:00" for h in range(24) for _ in range(7)][:168],
-    }
-    payload = {"hourly": hourly}
-    with patch("backend.twin.location_scorer.requests.get") as mock_get:
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = payload
+def _mock_http():
+    """Mock all external HTTP requests (Open-Meteo + Nominatim)."""
+    with patch("backend.twin.location_scorer.requests.get", side_effect=_mock_http_responder) as mock_get:
         yield mock_get
 
 
