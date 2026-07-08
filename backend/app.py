@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -29,7 +30,7 @@ class LocationRequest(BaseModel):
     lat: float = Field(..., ge=-90, le=90, description="Latitude in decimal degrees")
     lng: float = Field(..., ge=-180, le=180, description="Longitude in decimal degrees")
     servers: int = Field(50_000, gt=0, description="Number of servers")
-    ai_intensity: float = Field(0.70, ge=0, le=1, description="AI workload fraction")
+    ai_intensity: float = Field(0.72, ge=0, le=1, description="AI workload fraction")
 
 
 class HeatmapGridRequest(BaseModel):
@@ -197,8 +198,6 @@ async def simulate_location(payload: SimulateLocationRequest) -> dict[str, Any]:
             weather_15min.append(entry)
 
     # Build engine with location-specific config
-    import math
-
     config = load_config(CONFIG_PATH)
     config.energy.carbon_intensity_g_per_kwh = carbon_intensity
     config.load.ai_intensity = payload.ai_intensity
