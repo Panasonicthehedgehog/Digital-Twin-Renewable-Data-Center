@@ -52,6 +52,36 @@ class DigitalTwinEngine:
         self.battery_soc = config.energy.battery_initial_soc
         self.hydrogen_soc = 1.0 if config.energy.hydrogen_capacity_kwh > 0 else 0.0
         self.last_state: dict[str, Any] = {}
+        self._weather_override: list[tuple[float, float, float]] | None = None
+        self._weather_cursor: int = 0
+        self._carbon_intensity: float = config.energy.carbon_intensity_g_per_kwh
+        self._cum_it_kwh = 0.0
+        self._cum_facility_kwh = 0.0
+        self._cum_renewable_kwh = 0.0
+        self._cum_grid_kwh = 0.0
+        self._cum_battery_kwh = 0.0
+        self._cum_hydrogen_kwh = 0.0
+        self._cum_co2_g = 0.0
+
+    def set_weather(self, hourly_data: list[tuple[float, float, float]]) -> None:
+        """Override synthetic weather with real hourly data.
+
+        Each entry: (temp_c, wind_ms, solar_irradiance_wm2).
+        The list wraps around if the simulation runs longer than its length.
+        Resets all cumulative counters.
+        """
+        self._weather_override = hourly_data
+        self._weather_cursor = 0
+        self._cum_it_kwh = 0.0
+        self._cum_facility_kwh = 0.0
+        self._cum_renewable_kwh = 0.0
+        self._cum_grid_kwh = 0.0
+        self._cum_battery_kwh = 0.0
+        self._cum_hydrogen_kwh = 0.0
+        self._cum_co2_g = 0.0
+
+    def set_carbon_intensity(self, g_per_kwh: float) -> None:
+        self._carbon_intensity = g_per_kwh
 
     def set_scenario(self, name: str) -> None:
         if name not in SCENARIOS:
@@ -63,21 +93,29 @@ class DigitalTwinEngine:
         self.rng = random.Random(config.weather.seed)
         self.battery_soc = min(self.battery_soc, 1.0)
         self.hydrogen_soc = min(self.hydrogen_soc, 1.0 if config.energy.hydrogen_capacity_kwh > 0 else 0.0)
+        self._carbon_intensity = config.energy.carbon_intensity_g_per_kwh
 
     def simulate_step(self) -> dict[str, Any]:
         effect = SCENARIOS[self.scenario]
         dt_hours = self.config.simulation.timestep_minutes / 60
         day_progress = ((self.current_time.hour * 60) + self.current_time.minute) / (24 * 60)
 
-        base_temp = 19 + 8 * math.sin(2 * math.pi * (day_progress - 0.2))
-        base_wind = 5 + 2 * math.sin(2 * math.pi * (day_progress + 0.1))
-        solar_shape = max(0.0, math.sin(math.pi * day_progress))
+        solar_shape = max(0.0, math.sin(math.pi * day_progress))  # used for load shaping, always synthetic
 
-        noise = 0.0 if self.config.simulation.deterministic_mode else self.rng.uniform(-0.04, 0.04)
+        if self._weather_override is not None:
+            idx = self._weather_cursor % len(self._weather_override)
+            base_temp, base_wind, base_solar = self._weather_override[idx]
+            self._weather_cursor += 1
+        else:
+            base_temp = 19 + 8 * math.sin(2 * math.pi * (day_progress - 0.2))
+            base_wind = 5 + 2 * math.sin(2 * math.pi * (day_progress + 0.1))
+            base_solar = 980 * solar_shape
+            noise = 0.0 if self.config.simulation.deterministic_mode else self.rng.uniform(-0.04, 0.04)
+            base_wind = base_wind * (1 + noise)
 
         ambient_temp = base_temp + effect.temperature_offset_c
-        wind_speed = max(0.0, (base_wind * effect.wind_factor) * (1 + noise))
-        solar_irradiance = 980 * solar_shape * effect.solar_factor
+        wind_speed = max(0.0, base_wind * effect.wind_factor)
+        solar_irradiance = max(0.0, base_solar * effect.solar_factor)
 
         topology = self.config.topology
         load_cfg = self.config.load
@@ -140,6 +178,25 @@ class DigitalTwinEngine:
                 halls.append({"id": f"b{block+1}-h{hall+1}", "stress": round(sum(r['stress'] for r in racks) / len(racks), 3), "racks": racks})
             rack_map.append({"id": f"block-{block+1}", "halls": halls})
 
+        step_it_kwh = it_load_kw * dt_hours
+        step_facility_kwh = facility_kw * dt_hours
+        step_renewable_kwh = renewables_kw * dt_hours
+        step_grid_kwh = grid_kw * dt_hours
+        step_battery_kwh = battery_kw * dt_hours
+        step_hydrogen_kwh = hydrogen_kw * dt_hours
+        step_co2_g = grid_kw * dt_hours * self._carbon_intensity
+
+        self._cum_it_kwh += step_it_kwh
+        self._cum_facility_kwh += step_facility_kwh
+        self._cum_renewable_kwh += step_renewable_kwh
+        self._cum_grid_kwh += step_grid_kwh
+        self._cum_battery_kwh += step_battery_kwh
+        self._cum_hydrogen_kwh += step_hydrogen_kwh
+        self._cum_co2_g += step_co2_g
+
+        ref_pct = round(min(100.0, self._cum_renewable_kwh / self._cum_facility_kwh * 100), 1) if self._cum_facility_kwh > 0 else 0.0
+        cue_g_per_kwh = round(self._cum_co2_g / self._cum_it_kwh, 1) if self._cum_it_kwh > 0 else 0.0
+
         self.last_state = {
             "timestamp": self.current_time.isoformat(),
             "scenario": self.scenario,
@@ -173,6 +230,28 @@ class DigitalTwinEngine:
                 "hydrogen_bridge_active": hydrogen_kw > 0,
                 "failed": failed,
                 "failure_reason": "Power deficit not served" if failed else None,
+            },
+            "step_kwh": {
+                "it_kwh": round(step_it_kwh, 3),
+                "facility_kwh": round(step_facility_kwh, 3),
+                "renewable_kwh": round(step_renewable_kwh, 3),
+                "grid_kwh": round(step_grid_kwh, 3),
+                "battery_kwh": round(step_battery_kwh, 3),
+                "hydrogen_kwh": round(step_hydrogen_kwh, 3),
+                "co2_g": round(step_co2_g, 3),
+            },
+            "cumulative": {
+                "it_kwh": round(self._cum_it_kwh, 1),
+                "facility_kwh": round(self._cum_facility_kwh, 1),
+                "renewable_kwh": round(self._cum_renewable_kwh, 1),
+                "grid_kwh": round(self._cum_grid_kwh, 1),
+                "battery_kwh": round(self._cum_battery_kwh, 1),
+                "hydrogen_kwh": round(self._cum_hydrogen_kwh, 1),
+                "co2_g": round(self._cum_co2_g, 1),
+            },
+            "metrics": {
+                "ref_pct": ref_pct,
+                "cue_g_per_kwh": cue_g_per_kwh,
             },
             "hierarchy": rack_map,
         }

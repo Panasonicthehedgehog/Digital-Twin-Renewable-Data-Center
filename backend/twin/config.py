@@ -33,6 +33,7 @@ class EnergyConfig(BaseModel):
     hydrogen_capacity_kwh: float = Field(default=25000, ge=0)
     hydrogen_max_discharge_kw: float = Field(default=3500, ge=0)
     hydrogen_roundtrip_efficiency: float = Field(default=0.45, gt=0, le=1)
+    carbon_intensity_g_per_kwh: float = Field(default=450, ge=0)
 
 
 class WeatherConfig(BaseModel):

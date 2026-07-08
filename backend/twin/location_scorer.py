@@ -404,6 +404,59 @@ def estimate_pue(avg_temp_c: float) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Weather helper for simulation engine
+# ---------------------------------------------------------------------------
+
+def fetch_weather_hourly(lat: float, lng: float) -> list[tuple[float, float, float]]:
+    """Fetch 7-day hourly forecast as list of (temp_c, wind_ms, irradiance_wm2).
+
+    Uses the same Open-Meteo call as the location analysis but returns a
+    flat list suitable for DigitalTwinEngine.set_weather().
+    """
+    raw = fetch_weather_forecast(lat, lng, days=7)
+    hourly = _parse_hourly(raw)
+    result: list[tuple[float, float, float]] = []
+    for t, w, d, f in zip(
+        hourly["temperature"],
+        hourly["wind_speed"],
+        hourly["direct_radiation"],
+        hourly["diffuse_radiation"],
+    ):
+        result.append((t, w, d + f))
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Carbon intensity of the regional grid mix
+# ---------------------------------------------------------------------------
+
+_FUEL_CARBON_INTENSITY: dict[str, float] = {
+    "Coal": 950,
+    "Gas": 450,
+    "Oil": 720,
+    "Hydro": 15,
+    "Solar": 50,
+    "Wind": 12,
+    "Nuclear": 12,
+    "Biomass": 230,
+    "Geothermal": 40,
+    "Wave and Tidal": 20,
+}
+
+
+def compute_grid_carbon_intensity(fuel_mw: dict[str, float]) -> float:
+    """Weighted average carbon intensity of the regional grid (g CO₂/kWh)."""
+    total_mw = sum(fuel_mw.values())
+    if total_mw <= 0:
+        return 450.0
+    weighted = sum(
+        mw * _FUEL_CARBON_INTENSITY.get(fuel, 300)
+        for fuel, mw in fuel_mw.items()
+    )
+    return round(weighted / total_mw, 1)
+
+
+# ---------------------------------------------------------------------------
 # Main analysis function
 # ---------------------------------------------------------------------------
 
