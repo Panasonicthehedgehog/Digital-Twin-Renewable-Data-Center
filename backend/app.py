@@ -207,16 +207,20 @@ async def simulate_location(payload: SimulateLocationRequest) -> dict[str, Any]:
     topo.servers_per_rack = max(1, math.ceil(payload.servers / racks_total))
     actual_servers = racks_total * topo.servers_per_rack
 
+    # Grid capacity scales linearly (must cover full load).
+    # On-site renewables + storage scale sub-linearly (sqrt): larger DCs
+    # rely more on grid PPAs rather than 14× over-provisioned on-site generation.
     DEFAULT_SERVERS = 1024
     scale = actual_servers / DEFAULT_SERVERS
+    re_scale = math.sqrt(scale)
     energy = config.energy
-    energy.grid_capacity_kw = round(energy.grid_capacity_kw * scale)
-    energy.solar_capacity_kw = round(energy.solar_capacity_kw * scale)
-    energy.wind_capacity_kw = round(energy.wind_capacity_kw * scale)
-    energy.battery_capacity_kwh = round(energy.battery_capacity_kwh * scale)
-    energy.battery_max_power_kw = round(energy.battery_max_power_kw * scale)
-    energy.hydrogen_capacity_kwh = round(energy.hydrogen_capacity_kwh * scale)
-    energy.hydrogen_max_discharge_kw = round(energy.hydrogen_max_discharge_kw * scale)
+    energy.grid_capacity_kw = round(energy.grid_capacity_kw * max(scale, 1.0))
+    energy.solar_capacity_kw = max(1, round(energy.solar_capacity_kw * re_scale))
+    energy.wind_capacity_kw = max(1, round(energy.wind_capacity_kw * re_scale))
+    energy.battery_capacity_kwh = max(1, round(energy.battery_capacity_kwh * re_scale))
+    energy.battery_max_power_kw = max(1, round(energy.battery_max_power_kw * re_scale))
+    energy.hydrogen_capacity_kwh = max(1, round(energy.hydrogen_capacity_kwh * re_scale))
+    energy.hydrogen_max_discharge_kw = max(1, round(energy.hydrogen_max_discharge_kw * re_scale))
 
     engine = DigitalTwinEngine(config)
     engine.set_scenario(payload.scenario)
