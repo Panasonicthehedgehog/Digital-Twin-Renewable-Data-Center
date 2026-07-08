@@ -27,8 +27,8 @@ _CHART_FUELS: frozenset[str] = frozenset(
     ["Hydro", "Solar", "Wind", "Biomass", "Geothermal"]
 )
 
-# Each entry: (lat, lon, capacity_mw, fuel, is_renewable)
-_PLANT_DATA: list[tuple[float, float, float, str, bool]] = []
+# Each entry: (lat, lon, capacity_mw, fuel, is_renewable, name)
+_PLANT_DATA: list[tuple[float, float, float, str, bool, str]] = []
 
 
 def _load_plants() -> None:
@@ -445,7 +445,13 @@ _FUEL_CARBON_INTENSITY: dict[str, float] = {
 
 
 def compute_grid_carbon_intensity(fuel_mw: dict[str, float]) -> float:
-    """Weighted average carbon intensity of the regional grid (g CO₂/kWh)."""
+    """Weighted average carbon intensity of the regional grid (g CO₂/kWh).
+
+    Weights by nameplate capacity, not expected generation. This is a
+    known simplification: coal/gas plants run at higher capacity factors
+    than solar/wind, so nameplate-weighting understates the true carbon
+    intensity in markets where fossil plants are dispatched more frequently.
+    """
     total_mw = sum(fuel_mw.values())
     if total_mw <= 0:
         return 450.0

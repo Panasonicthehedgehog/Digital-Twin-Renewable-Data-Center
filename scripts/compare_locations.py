@@ -52,13 +52,13 @@ def main() -> None:
     try:
         requests.get(f"{API_BASE}/health", timeout=3)
     except requests.ConnectionError:
-        print("Backend nicht erreichbar. Starte mit: .venv/bin/uvicorn backend.app:app")
+        print("Backend unreachable. Start with: .venv/bin/uvicorn backend.app:app")
         sys.exit(1)
 
     results: list[dict[str, Any]] = []
     for loc in LOCATIONS:
         for scenario in SCENARIOS:
-            print(f"Simuliere {loc['name']} ({scenario}) ...", end=" ", flush=True)
+            print(f"Simulating {loc['name']} ({scenario}) ...", end=" ", flush=True)
             data = run_simulation(loc["lat"], loc["lng"], scenario)
             results.append((loc["name"], scenario, data))
             print("OK")
@@ -66,7 +66,7 @@ def main() -> None:
     print()
 
     # Summary table
-    header = f"{'Standort':<20} {'Szenario':<16} {'REF %':>8} {'CUE g/kWh':>12} {'CO₂ kg':>10} {'Grid g/kWh':>12} {'Ausfälle':>9}"
+    header = f"{'Location':<20} {'Scenario':<16} {'REF %':>8} {'CUE g/kWh':>12} {'CO₂ kg':>10} {'Grid g/kWh':>12} {'Failures':>9}"
     print_horizontal_line(len(header))
     print(header)
     print_horizontal_line(len(header))
@@ -87,7 +87,7 @@ def main() -> None:
     # Daily breakdown for each scenario (Markdown table for presentation)
     for name, scenario, data in results:
         print(f"\n## {name} – {scenario}\n")
-        daily_h = f"{'Tag':<6} {'REF %':>8} {'CUE g/kWh':>12} {'IT MWh':>10} {'Grid MWh':>10} {'Ren. MWh':>10}"
+        daily_h = f"{'Day':<6} {'REF %':>8} {'CUE g/kWh':>12} {'IT MWh':>10} {'Grid MWh':>10} {'Ren. MWh':>10}"
         print(daily_h)
         print("─" * len(daily_h))
         for day in data["daily"]:

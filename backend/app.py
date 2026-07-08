@@ -234,20 +234,16 @@ async def simulate_location(payload: SimulateLocationRequest) -> dict[str, Any]:
     cum = final["cumulative"]
     metrics = final["metrics"]
 
-    # Daily breakdown
+    # Daily breakdown – sum unrounded per-step kWh for each day
     steps_per_day = 24 * 4
     daily = []
     for d in range(7):
         day_states = states[d * steps_per_day : (d + 1) * steps_per_day]
-        day_prev_cum = states[d * steps_per_day - 1]["cumulative"] if d > 0 else {
-            "it_kwh": 0, "facility_kwh": 0, "renewable_kwh": 0, "grid_kwh": 0, "co2_g": 0
-        }
-        day_cum = day_states[-1]["cumulative"]
-        day_it = day_cum["it_kwh"] - day_prev_cum["it_kwh"]
-        day_facility = day_cum["facility_kwh"] - day_prev_cum["facility_kwh"]
-        day_renewable = day_cum["renewable_kwh"] - day_prev_cum["renewable_kwh"]
-        day_grid = day_cum["grid_kwh"] - day_prev_cum["grid_kwh"]
-        day_co2 = day_cum["co2_g"] - day_prev_cum["co2_g"]
+        day_it = sum(s["step_kwh"]["it_kwh"] for s in day_states)
+        day_facility = sum(s["step_kwh"]["facility_kwh"] for s in day_states)
+        day_renewable = sum(s["step_kwh"]["renewable_kwh"] for s in day_states)
+        day_grid = sum(s["step_kwh"]["grid_kwh"] for s in day_states)
+        day_co2 = sum(s["step_kwh"]["co2_g"] for s in day_states)
         daily.append({
             "day": d + 1,
             "ref_pct": round(min(100.0, day_renewable / day_facility * 100), 1) if day_facility > 0 else 0.0,
