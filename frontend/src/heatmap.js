@@ -13,12 +13,18 @@
 
 import L from 'leaflet';
 
-const API_BASE = 'http://localhost:8000';
+// Same origin: Vite proxies /api in dev, FastAPI serves the app in the
+// packaged build. Never hardcode localhost here — desktop.py uses a random port.
+const API_BASE = '';
 
 function heatColor(score) {
   const h = (score / 100) * 120;
   return `hsl(${h}, 75%, 45%)`;
 }
+
+// Scores are rounded to one decimal by the backend; cache the 1001 strings
+// instead of rebuilding an HSL string for every cell on every redraw.
+const COLOR_CACHE = Array.from({ length: 1001 }, (_, i) => heatColor(i / 10));
 
 export const HeatmapLayer = L.Layer.extend({
 
@@ -32,6 +38,9 @@ export const HeatmapLayer = L.Layer.extend({
     this._grid = null;
     this._fetching = false;
     this._fetchTimer = null;
+    this._abortController = null;
+    this._requestId = 0;
+    this._drawScheduled = false;
   },
 
   onAdd(map) {
@@ -49,8 +58,8 @@ export const HeatmapLayer = L.Layer.extend({
     map.getContainer().appendChild(this._canvas);
     this._resize();
 
-    // Redraw on every view change (pan/zoom) — lightweight, no fetch
-    map.on('move', this._draw, this);
+    // Redraw on every view change (pan/zoom) — throttled to one frame.
+    map.on('move', this._scheduleDraw, this);
     // Fetch new data only after movement settles
     map.on('moveend', this._scheduleFetch, this);
     map.on('resize', this._resize, this);
@@ -59,12 +68,15 @@ export const HeatmapLayer = L.Layer.extend({
   },
 
   onRemove(map) {
-    map.off('move', this._draw, this);
+    map.off('move', this._scheduleDraw, this);
     map.off('moveend', this._scheduleFetch, this);
     map.off('resize', this._resize, this);
+    this._abortController?.abort();
+    clearTimeout(this._fetchTimer);
     if (this._canvas && this._canvas.parentNode) {
       this._canvas.parentNode.removeChild(this._canvas);
     }
+    this._canvas = null;
   },
 
   _resize() {
@@ -76,8 +88,18 @@ export const HeatmapLayer = L.Layer.extend({
     this._draw();
   },
 
+  _scheduleDraw() {
+    if (this._drawScheduled) return;
+    this._drawScheduled = true;
+    requestAnimationFrame(() => {
+      this._drawScheduled = false;
+      this._draw();
+    });
+  },
+
   _scheduleFetch() {
     if (this._map.getZoom() < this.options.minZoom) {
+      this._abortController?.abort();
       this._grid = null;
       this._draw();
       return;
@@ -94,6 +116,7 @@ export const HeatmapLayer = L.Layer.extend({
     const w = bounds.getWest();
 
     if (this._map.getZoom() < this.options.minZoom) {
+      this._abortController?.abort();
       this._grid = null;
       this._draw();
       return;
@@ -101,21 +124,33 @@ export const HeatmapLayer = L.Layer.extend({
 
     this._fetching = true;
 
+    // Cancel the previous request so a slow, stale response cannot overwrite
+    // a newer grid.
+    this._abortController?.abort();
+    const controller = new AbortController();
+    this._abortController = controller;
+    const requestId = ++this._requestId;
+
     fetch(`${API_BASE}/api/heatmap/grid`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ north: n, south: s, east: e, west: w }),
+      signal: controller.signal,
     })
       .then(r => r.json())
       .then(data => {
+        if (requestId !== this._requestId) return;
         this._grid = data;
         this._draw();
       })
-      .catch(() => {
+      .catch(err => {
+        if (err.name === 'AbortError' || requestId !== this._requestId) return;
         this._grid = null;
         this._draw();
       })
-      .finally(() => { this._fetching = false; });
+      .finally(() => {
+        if (requestId === this._requestId) this._fetching = false;
+      });
   },
 
   _draw() {
@@ -145,27 +180,32 @@ export const HeatmapLayer = L.Layer.extend({
     const col0 = Math.max(0, Math.floor((vw - west) / res));
     const col1 = Math.min(g.cols - 1, Math.ceil((ve - west) / res));
 
+    // In Web Mercator, x depends only on longitude and y only on latitude.
+    // Project each grid line once instead of projecting two corners per cell.
+    const colX = [];
+    for (let cj = col0; cj <= col1 + 1; cj++) {
+      colX.push(this._map.latLngToContainerPoint([north, west + cj * res]).x);
+    }
+    const rowY = [];
+    for (let ri = row0; ri <= row1 + 1; ri++) {
+      rowY.push(this._map.latLngToContainerPoint([north - ri * res, west]).y);
+    }
+
+    ctx.globalAlpha = this.options.opacity;
+
     for (let ri = row0; ri <= row1; ri++) {
+      const y0 = Math.min(rowY[ri - row0], rowY[ri - row0 + 1]);
+      const h = Math.max(1, Math.abs(rowY[ri - row0 + 1] - rowY[ri - row0]));
       for (let cj = col0; cj <= col1; cj++) {
         const score = grid[ri][cj];
         if (score == null) continue;
 
-        const lat0 = north - ri * res;
-        const lng0 = west + cj * res;
-        const lat1 = lat0 - res;
-        const lng1 = lng0 + res;
+        const x0 = Math.min(colX[cj - col0], colX[cj - col0 + 1]);
+        const w = Math.max(1, Math.abs(colX[cj - col0 + 1] - colX[cj - col0]));
 
-        const p0 = this._map.latLngToContainerPoint([lat0, lng0]);
-        const p1 = this._map.latLngToContainerPoint([lat1, lng1]);
-
-        const x = Math.min(p0.x, p1.x);
-        const y = Math.min(p0.y, p1.y);
-        const w = Math.max(1, Math.abs(p1.x - p0.x));
-        const h = Math.max(1, Math.abs(p1.y - p0.y));
-
-        ctx.fillStyle = heatColor(score);
-        ctx.globalAlpha = this.options.opacity;
-        ctx.fillRect(x, y, w, h);
+        const colorIndex = Math.max(0, Math.min(1000, Math.round(score * 10)));
+        ctx.fillStyle = COLOR_CACHE[colorIndex];
+        ctx.fillRect(x0, y0, w, h);
       }
     }
   },

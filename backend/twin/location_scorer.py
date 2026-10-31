@@ -10,11 +10,44 @@ from __future__ import annotations
 import csv
 import math
 import statistics
+import threading
+import time
 from typing import Any
 
 import requests
 
 from backend.paths import resource_path
+
+# ---------------------------------------------------------------------------
+# Small thread-safe TTL caches for external API results
+# ---------------------------------------------------------------------------
+
+_CACHE_MAX = 512
+_CACHE_LOCK = threading.Lock()
+
+_WEATHER_FORECAST_CACHE: dict[tuple[float, float, int], tuple[float, dict[str, Any]]] = {}
+_WEATHER_FORECAST_TTL = 15 * 60
+
+_LOCATION_CACHE: dict[tuple[float, float], tuple[float, dict[str, str]]] = {}
+_LOCATION_CACHE_TTL = 24 * 60 * 60
+
+
+def _cache_get(cache: dict, key: tuple, ttl: float) -> Any | None:
+    with _CACHE_LOCK:
+        entry = cache.get(key)
+        if entry and time.time() - entry[0] < ttl:
+            return entry[1]
+        if entry:
+            cache.pop(key, None)
+    return None
+
+
+def _cache_set(cache: dict, key: tuple, value: Any) -> None:
+    with _CACHE_LOCK:
+        if len(cache) >= _CACHE_MAX:
+            oldest = min(cache, key=lambda k: cache[k][0])
+            cache.pop(oldest, None)
+        cache[key] = (time.time(), value)
 
 # ---------------------------------------------------------------------------
 # Power plant database – loaded once at module startup from WRI global CSV
@@ -198,11 +231,34 @@ def expected_generation_mw(
 # Nominatim reverse geocoding
 # ---------------------------------------------------------------------------
 
+_NOMINATIM_LOCK = threading.Lock()
+_NOMINATIM_LAST = 0.0
+_NOMINATIM_MIN_INTERVAL = 1.0  # Nominatim policy: max. 1 request/second
+
+
 def _nominatim_reverse(lat: float, lng: float) -> dict[str, Any]:
-    """Call Nominatim reverse geocode; returns address dict."""
+    """Call Nominatim reverse geocode; returns address dict.
+
+    Requests are serialized and spaced by at least one second, as required by
+    the Nominatim usage policy. Callers should go through get_location_info(),
+    which caches results per rounded coordinate.
+    """
+    global _NOMINATIM_LAST
+
     url = "https://nominatim.openstreetmap.org/reverse"
     params = {"lat": lat, "lon": lng, "format": "json", "addressdetails": 1}
     headers = {"User-Agent": "DigitalTwin-DC-LocationFinder/1.0 (research project)"}
+
+    with _NOMINATIM_LOCK:
+        now = time.monotonic()
+        wait = _NOMINATIM_MIN_INTERVAL - (now - _NOMINATIM_LAST)
+        # Reserve the next slot while holding the lock, then release it before
+        # the HTTP request so concurrent analyses are not serialized.
+        _NOMINATIM_LAST = now + max(0.0, wait)
+
+    if wait > 0:
+        time.sleep(wait)
+
     resp = requests.get(url, params=params, headers=headers, timeout=8)
     resp.raise_for_status()
     return resp.json()
@@ -210,6 +266,11 @@ def _nominatim_reverse(lat: float, lng: float) -> dict[str, Any]:
 
 def get_location_info(lat: float, lng: float) -> dict[str, str]:
     """Return city, country, and display name for given coordinates."""
+    cache_key = (round(lat, 3), round(lng, 3))
+    cached = _cache_get(_LOCATION_CACHE, cache_key, _LOCATION_CACHE_TTL)
+    if cached is not None:
+        return cached
+
     try:
         data = _nominatim_reverse(lat, lng)
         addr = data.get("address", {})
@@ -224,7 +285,9 @@ def get_location_info(lat: float, lng: float) -> dict[str, str]:
         country = addr.get("country", "Unknown")
         country_code = addr.get("country_code", "??").upper()
         display = f"{city}, {country}" if city != "Unknown" else f"{lat:.3f}°N, {lng:.3f}°E"
-        return {"city": city, "country": country, "country_code": country_code, "display": display}
+        result = {"city": city, "country": country, "country_code": country_code, "display": display}
+        _cache_set(_LOCATION_CACHE, cache_key, result)
+        return result
     except Exception:
         return {
             "city": "Unknown",
@@ -238,27 +301,44 @@ def get_location_info(lat: float, lng: float) -> dict[str, str]:
 # Open-Meteo weather data
 # ---------------------------------------------------------------------------
 
-def fetch_weather_forecast(lat: float, lng: float, days: int = 7) -> dict[str, Any]:
-    """Fetch hourly forecast from Open-Meteo (free, no API key required)."""
-    url = "https://api.open-meteo.com/v1/forecast"
-    params = {
+_OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+_HOURLY_VARIABLES = [
+    "temperature_2m",
+    "windspeed_10m",
+    "direct_radiation",
+    "diffuse_radiation",
+]
+
+
+def _open_meteo_params(lat: Any, lng: Any, days: int = 7) -> dict[str, Any]:
+    """Shared Open-Meteo request parameters for single and batch queries."""
+    return {
         "latitude": lat,
         "longitude": lng,
-        "hourly": [
-            "temperature_2m",
-            "windspeed_10m",
-            "direct_radiation",
-            "diffuse_radiation",
-            "cloudcover",
-            "precipitation",
-        ],
+        "hourly": _HOURLY_VARIABLES,
         "forecast_days": days,
         "timezone": "UTC",
         "windspeed_unit": "ms",
     }
-    resp = requests.get(url, params=params, timeout=12)
+
+
+def fetch_weather_forecast(lat: float, lng: float, days: int = 7) -> dict[str, Any]:
+    """Fetch hourly forecast from Open-Meteo (free, no API key required).
+
+    Results are cached for 15 minutes per rounded coordinate. Only variables
+    that are actually consumed are requested.
+    """
+    cache_key = (round(lat, 2), round(lng, 2), days)
+    cached = _cache_get(_WEATHER_FORECAST_CACHE, cache_key, _WEATHER_FORECAST_TTL)
+    if cached is not None:
+        return cached
+
+    params = _open_meteo_params(lat, lng, days)
+    resp = requests.get(_OPEN_METEO_URL, params=params, timeout=12)
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    _cache_set(_WEATHER_FORECAST_CACHE, cache_key, data)
+    return data
 
 
 def _parse_hourly(weather: dict[str, Any]) -> dict[str, list[float]]:
@@ -274,8 +354,6 @@ def _parse_hourly(weather: dict[str, Any]) -> dict[str, list[float]]:
         "wind_speed": clean("windspeed_10m"),
         "direct_radiation": clean("direct_radiation"),
         "diffuse_radiation": clean("diffuse_radiation"),
-        "cloudcover": clean("cloudcover"),
-        "precipitation": clean("precipitation"),
         "timestamps": h.get("time", []),
     }
 
@@ -501,6 +579,7 @@ def analyze_location(
     total_irr = [d + f for d, f in zip(direct, diffuse)]
 
     avg_temp = statistics.mean(temps) if temps else 15.0
+    avg_temp_rounded = round(avg_temp, 1)
     avg_wind = statistics.mean(winds) if winds else 5.0
     avg_irr = statistics.mean(total_irr) if total_irr else 100.0
     temp_std = statistics.stdev(temps) if len(temps) > 1 else 5.0
@@ -517,7 +596,7 @@ def analyze_location(
     kw_per_server = 0.8 + 5.2 * u ** 1.2 + 0.6 * u
     dc_capacity_mw = servers * kw_per_server / 1000
 
-    pue = estimate_pue(avg_temp)
+    pue = estimate_pue(avg_temp_rounded)
     effective_demand_mw = dc_capacity_mw * pue
 
     # 6. Load-coverage score: expected regional renewable *generation* vs. DC total demand.
@@ -591,7 +670,7 @@ def analyze_location(
             "label": label,
         },
         "weather": {
-            "avg_temperature_c": round(avg_temp, 1),
+            "avg_temperature_c": avg_temp_rounded,
             "avg_wind_speed_ms": round(avg_wind, 1),
             "avg_irradiance_wm2": round(avg_irr, 1),
             "temp_stdev_c": round(temp_std, 1),

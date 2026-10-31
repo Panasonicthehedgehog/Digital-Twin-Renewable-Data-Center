@@ -5,6 +5,10 @@
 
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { maplibreGL } from '@maplibre/maplibre-gl-leaflet';
+import { setWorkerUrl } from 'maplibre-gl';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import {
   Chart,
   LinearScale, CategoryScale,
@@ -15,6 +19,9 @@ import {
 import './styles.css';
 
 import { HeatmapLayer } from './heatmap.js';
+
+// MapLibre GL v6 is ESM-only; point it at the worker chunk Vite emits.
+setWorkerUrl(workerUrl);
 
 // Fix Leaflet default icons in Vite
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
@@ -123,6 +130,9 @@ function updateAllDerivedValues(aiIntensity, servers) {
     loc.scores.suitability = Math.round(
       (loc.scores.grid * 0.40 + loc.scores.load_coverage * 0.35 + loc.scores.climate * 0.25) * 10
     ) / 10;
+    loc.scores.label = scoreLabel(loc.scores.suitability);
+    // The recommendation text stays backend-authored and is refreshed once
+    // the slider is released (refreshActiveFromBackend).
 
     // Refresh marker if this location is on the map
     const marker = state.markers.get(loc._id);
@@ -163,25 +173,108 @@ async function analyzeLocation(lat, lng, aiIntensity, servers) {
 // Leaflet Map
 // ─────────────────────────────────────────────────────────────────────────────
 let map;
+let glLayer = null;
+let glMap = null;
+
+function resizeMap() {
+  if (!map) return;
+  map.invalidateSize();
+  if (glMap) {
+    try {
+      glMap.resize();
+    } catch (err) {
+      console.warn('MapLibre resize failed:', err);
+    }
+  }
+  map.fire('moveend');
+}
+
+function hasWebGL2() {
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2');
+    if (!gl) return false;
+    // Release the probe context immediately; browsers limit live WebGL contexts.
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function showMapNotice(text) {
+  const notice = document.createElement('div');
+  notice.className = 'map-notice';
+  notice.textContent = text;
+  document.getElementById('map-wrap').appendChild(notice);
+}
+
+function addRasterFallback(map) {
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
+  }).addTo(map);
+  showMapNotice('WebGL2 ist nicht verfügbar – die Rasterkarte wird verwendet.');
+}
 
 function initMap() {
   map = L.map('map', {
     center: [30, 10],
     zoom: 3,
     minZoom: 2,
+    maxZoom: 18,
     zoomControl: false,
     maxBounds: [[-85, -180], [85, 180]],
     maxBoundsViscosity: 1.0,
   });
 
-  // CartoDB Positron – clean, light basemap
-  const baseLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-    attribution: '© <a href="https://openstreetmap.org">OSM</a> © <a href="https://carto.com">CARTO</a>',
-    subdomains: 'abcd',
-    minZoom: 2,
-    maxZoom: 18,
-    noWrap: true,
-  }).addTo(map);
+  // The world is 256 * 2^zoom pixels wide. If the viewport is wider than
+  // that, Leaflet shows empty gray margins. Raise the minimum zoom so the
+  // world always fills the map, and recompute it when the container resizes.
+  function minZoomToFillViewport() {
+    const size = map.getSize();
+    // The epsilon avoids an extra zoom level when the dimension is an exact
+    // power-of-two multiple of 256 (e.g. 2048 px -> zoom 3, not 4).
+    return Math.max(1, Math.ceil(Math.log2(Math.max(size.x, size.y) / 256) - 1e-9));
+  }
+
+  function applyMinZoom() {
+    const minZoom = minZoomToFillViewport();
+    map.setMinZoom(minZoom);
+    if (map.getZoom() < minZoom) map.setZoom(minZoom);
+  }
+
+  map.on('resize', applyMinZoom);
+  applyMinZoom();
+
+  // Keep Leaflet in sync with any container size change (window resize,
+  // sidebar/panel layout, browser zoom), not only window resize events.
+  if (typeof ResizeObserver !== 'undefined') {
+    let resizeTimer = null;
+    const observer = new ResizeObserver(() => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(resizeMap, 120);
+    });
+    observer.observe(document.getElementById('map-wrap'));
+  }
+
+  // OpenFreeMap Positron – free, no API key, no request limits.
+  // The Leaflet bridge reads the style's source attribution automatically.
+  if (hasWebGL2()) {
+    try {
+      glLayer = maplibreGL({
+        style: 'https://tiles.openfreemap.org/styles/positron',
+        renderWorldCopies: false,
+      }).addTo(map);
+      glMap = glLayer.getMaplibreMap?.() ?? null;
+    } catch (err) {
+      console.error('MapLibre initialization failed:', err);
+      addRasterFallback(map);
+    }
+  } else {
+    console.warn('WebGL2 is not available – falling back to raster tiles.');
+    addRasterFallback(map);
+  }
 
   L.control.zoom({ position: 'topright' }).addTo(map);
 
@@ -276,11 +369,20 @@ function setLoading(on) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Detail Panel
 // ─────────────────────────────────────────────────────────────────────────────
+// The detail panel is a flex sibling, so opening/closing it changes the map
+// container width. Leaflet only tracks window resizes; without this the map
+// and the heatmap canvas keep their old size and are clipped at the edge.
+function scheduleMapResize() {
+  setTimeout(resizeMap, 320);
+}
+
 function showDetailPanel(locData) {
   state.activeId = locData._id;
 
   const panel = document.getElementById('detail-panel');
+  const wasClosed = panel.classList.contains('panel-closed');
   panel.classList.remove('panel-closed');
+  if (wasClosed) scheduleMapResize();
 
   const s = locData.scores;
   const w = locData.weather;
@@ -342,6 +444,39 @@ function showDetailPanel(locData) {
   btn._currentData = locData;
 }
 
+// Lightweight refresh for slider changes: updates derived values without
+// destroying/recreating the Chart.js instances.
+function refreshDetailDerived(locData) {
+  if (state.activeId !== locData._id) return;
+
+  const s = locData.scores;
+  const e = locData.energy;
+
+  const arc = document.getElementById('gauge-arc');
+  arc.style.strokeDashoffset = CIRCUMFERENCE * (1 - s.suitability / 100);
+  arc.style.stroke = scoreColor(s.suitability);
+  document.getElementById('gauge-score').textContent = s.suitability;
+
+  const badge = document.getElementById('score-badge');
+  badge.innerHTML = `
+    <span class="badge-value" style="color:${scoreColor(s.suitability)}">${scoreLabel(s.suitability)}</span>
+    <span class="badge-label">Site Suitability: ${s.suitability}/100</span>
+    <span class="badge-country">${locData.location.city}, ${locData.location.country}</span>
+  `;
+
+  setBar('climate', s.climate);
+  setBar('grid', s.grid);
+  setBar('load-coverage', s.load_coverage);
+
+  document.getElementById('kpi-pue').textContent = e.estimated_pue;
+
+  const rec = document.getElementById('recommendation');
+  rec.textContent = locData.recommendation;
+  rec.className = `recommendation ${recClass(s.suitability)}`;
+
+  if (locData.regional_grid) renderCoverageBar(locData.regional_grid);
+}
+
 function setBar(name, value) {
   const fill = document.getElementById(`bar-${name}`);
   const val  = document.getElementById(`val-${name}`);
@@ -351,6 +486,7 @@ function setBar(name, value) {
 
 function closeDetailPanel() {
   document.getElementById('detail-panel').classList.add('panel-closed');
+  scheduleMapResize();
   state.activeId = null;
   renderSidebarList();
 }
@@ -405,7 +541,7 @@ const FUEL_COLORS = {
 const _plantSort  = { col: 'distance_km', dir: 'asc' };
 const _plantState = { filter: 'renewable' }; // 'renewable' | 'all'
 
-function renderRegionalMixChart(rg) {
+function renderCoverageBar(rg) {
   // Coverage bar — scales linearly 0–200% → 0–100% bar width, values >200% show full bar with "+"
   const barPct = Math.min(200, rg.coverage_ratio_pct) / 2;
   const isOverflow = rg.coverage_ratio_pct > 200;
@@ -432,6 +568,10 @@ function renderRegionalMixChart(rg) {
     badge.textContent = '✗ Grid backup required';
     badge.style.color = '#dc2626';
   }
+}
+
+function renderRegionalMixChart(rg) {
+  renderCoverageBar(rg);
 
   // Nearby plants list
   const container = document.getElementById('regional-plant-list');
@@ -722,7 +862,7 @@ function switchView(viewName) {
 
   if (viewName === 'compare') renderCompareView();
   if (viewName === 'map') {
-    setTimeout(() => map.invalidateSize(), 100);
+    setTimeout(resizeMap, 100);
   }
 }
 
@@ -747,71 +887,69 @@ function bindUI() {
     document.getElementById('cfg-capacity-val').textContent = `${mw.toFixed(1)} MW`;
   }
 
-  // Debounced re-analysis of the currently open location
-  let _reanalyzeTimer = null;
-  async function reanalyzeActive() {
-    if (state.activeId === null) return;
-    const loc = state.locations.find(l => l._id === state.activeId);
-    if (!loc) return;
+  // Sliders only change load-dependent values; weather and the regional grid
+  // are slider-independent. Recompute client-side and skip the backend call.
+  function applyDerivedUpdates() {
+    updateAllDerivedValues(Number(aiSlider.value), Number(serversSlider.value));
 
-    setLoading(true);
-    try {
-      const result = await analyzeLocation(
-        loc.location.lat, loc.location.lng,
-        Number(aiSlider.value), Number(serversSlider.value),
-      );
-      result._id = loc._id;
-
-      // Replace in locations list
-      const idx = state.locations.findIndex(l => l._id === loc._id);
-      if (idx !== -1) state.locations[idx] = result;
-
-      // Update marker icon if score changed
-      const marker = state.markers.get(loc._id);
-      if (marker) marker.setIcon(createMarkerIcon(result.scores.suitability));
-
-      // Sync comparison entry if present
-      const cIdx = state.compared.findIndex(c => c._id === loc._id);
-      if (cIdx !== -1) state.compared[cIdx] = result;
-
-      showDetailPanel(result);
-      renderSidebarList();
-    } catch (err) {
-      console.error('Re-analysis failed:', err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function scheduleReanalyze() {
-    // First update ALL locations client-side (instant)
-    const ai = Number(aiSlider.value);
-    const sv = Number(serversSlider.value);
-    updateAllDerivedValues(ai, sv);
-
-    // Refresh UI for current view
     if (state.activeId !== null) {
       const loc = state.locations.find(l => l._id === state.activeId);
-      if (loc) showDetailPanel(loc);
+      if (loc) refreshDetailDerived(loc);
     }
     renderSidebarList();
-    if (state.compared.length > 0) renderCompareView();
-
-    // Then re-fetch the active location from backend for fresh weather data
-    clearTimeout(_reanalyzeTimer);
-    _reanalyzeTimer = setTimeout(reanalyzeActive, 600);
   }
 
   aiSlider.addEventListener('input', () => {
     document.getElementById('cfg-ai-val').textContent = `${aiSlider.value} %`;
     updateCapacityDisplay();
-    scheduleReanalyze();
+    applyDerivedUpdates();
   });
   serversSlider.addEventListener('input', () => {
     document.getElementById('cfg-servers-val').textContent = Number(serversSlider.value).toLocaleString();
     updateCapacityDisplay();
-    scheduleReanalyze();
+    applyDerivedUpdates();
   });
+
+  // On release, fetch the authoritative result once. Weather and geocode are
+  // cached server-side, so this is cheap; it keeps the recommendation text and
+  // all derived values on the backend's single source of truth.
+  async function refreshActiveFromBackend() {
+    if (state.activeId === null) return;
+    const activeId = state.activeId;
+    const loc = state.locations.find(l => l._id === activeId);
+    if (!loc) return;
+
+    try {
+      const result = await analyzeLocation(
+        loc.location.lat, loc.location.lng,
+        Number(aiSlider.value), Number(serversSlider.value),
+      );
+      result._id = activeId;
+
+      const idx = state.locations.findIndex(l => l._id === activeId);
+      if (idx !== -1) state.locations[idx] = result;
+
+      const marker = state.markers.get(activeId);
+      if (marker) marker.setIcon(createMarkerIcon(result.scores.suitability));
+
+      const cIdx = state.compared.findIndex(c => c._id === activeId);
+      if (cIdx !== -1) state.compared[cIdx] = result;
+
+      if (state.activeId === activeId) showDetailPanel(result);
+      renderSidebarList();
+      if (state.compared.length > 0) renderCompareView();
+    } catch (err) {
+      console.error('Refresh failed:', err);
+    }
+  }
+
+  const refreshOnChange = () => {
+    refreshActiveFromBackend();
+    if (state.activeId === null && state.compared.length > 0) renderCompareView();
+  };
+  aiSlider.addEventListener('change', refreshOnChange);
+  serversSlider.addEventListener('change', refreshOnChange);
+
   updateCapacityDisplay(); // initial render
 
   // Add to comparison

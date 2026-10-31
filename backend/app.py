@@ -6,7 +6,8 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi.middleware.gzip import GZipMiddleware
+from pydantic import BaseModel, Field, model_validator
 
 import requests
 
@@ -39,6 +40,15 @@ class HeatmapGridRequest(BaseModel):
     east: float = Field(..., ge=-180, le=180)
     west: float = Field(..., ge=-180, le=180)
     resolution: float | None = None
+    include_components: bool = False
+
+    @model_validator(mode="after")
+    def _validate_bounds(self) -> "HeatmapGridRequest":
+        if self.north <= self.south:
+            raise ValueError("north must be greater than south")
+        if self.east <= self.west:
+            raise ValueError("east must be greater than west")
+        return self
 
 
 class SimulateLocationRequest(BaseModel):
@@ -64,8 +74,15 @@ class TwinRuntime:
     async def _ticker(self) -> None:
         while True:
             await asyncio.sleep(1.0)
-            self.state = self.engine.simulate_step()
-            await self.broadcast(self.state)
+            await self._tick()
+
+    async def _tick(self) -> None:
+        # The map view never consumes /ws/state; skip the simulation while
+        # nobody is connected instead of burning CPU at 1 Hz.
+        if not self.clients:
+            return
+        self.state = self.engine.simulate_step()
+        await self.broadcast(self.state)
 
     async def broadcast(self, payload: dict[str, Any]) -> None:
         stale: list[WebSocket] = []
@@ -87,6 +104,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 @app.on_event("startup")
@@ -138,7 +156,7 @@ def update_config(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.post("/api/location/analyze")
-async def analyze_location(payload: LocationRequest) -> dict[str, Any]:
+def analyze_location(payload: LocationRequest) -> dict[str, Any]:
     """Analyse a geographic location for hyperscaler data centre suitability.
 
     Fetches real weather data from Open-Meteo, performs reverse geocoding via
@@ -163,7 +181,7 @@ async def analyze_location(payload: LocationRequest) -> dict[str, Any]:
 
 
 @app.post("/api/simulate/location")
-async def simulate_location(payload: SimulateLocationRequest) -> dict[str, Any]:
+def simulate_location(payload: SimulateLocationRequest) -> dict[str, Any]:
     """Simulate data center operation at a specific geographic location.
 
     Fetches real 7-day weather from Open-Meteo and the regional grid mix from
@@ -308,6 +326,7 @@ def heatmap_grid(payload: HeatmapGridRequest) -> dict[str, Any]:
             east=payload.east,
             west=payload.west,
             resolution=payload.resolution,
+            include_components=payload.include_components,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

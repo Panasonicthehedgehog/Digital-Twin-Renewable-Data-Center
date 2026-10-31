@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Desktop entry point for the packaged Windows app.
+"""Desktop entry point for the packaged app (Windows .exe / macOS .app).
 
 Starts the FastAPI server (no reload) on a free local port in a background
 thread, waits until it answers /health, then opens the default browser.
-Closing the console window stops the server.
+On Windows, closing the console window stops the server; on macOS, quit the
+app from the Dock.
 
 Run in dev:  python desktop.py
-Packaged:    double-click the .exe produced by datacenter-twin.spec
+Packaged:    pyinstaller datacenter-twin.spec
 """
 from __future__ import annotations
 
 import socket
+import sys
 import threading
 import time
 import urllib.request
@@ -56,8 +58,11 @@ def main() -> int:
 
     if wait_until_ready(url):
         print(f"  Geoeffnet im Browser: {url}")
-        print("  Dieses Fenster bitte GEOEFFNET lassen.")
-        print("  Zum Beenden einfach dieses Fenster schliessen.")
+        if sys.platform == "darwin":
+            print("  Zum Beenden die App im Dock beenden (Rechtsklick -> Beenden).")
+        else:
+            print("  Dieses Fenster bitte GEOEFFNET lassen.")
+            print("  Zum Beenden einfach dieses Fenster schliessen.")
         webbrowser.open(url)
     else:
         print("  FEHLER: Server konnte nicht gestartet werden.")
