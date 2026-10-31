@@ -1,13 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec for the single-file Windows build.
-# Build (on Windows, after `npm run build` in frontend/):
+# PyInstaller spec for the single-file desktop build.
+# Build (after `npm run build` in frontend/):
 #   pip install -r requirements.txt pyinstaller
 #   pyinstaller datacenter-twin.spec
-# Output: dist/RenewableDataCenter.exe
+# Output: dist/RenewableDataCenter.exe (Windows)
+#         dist/RenewableDataCenter.app (macOS)
+
+import sys
 
 from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
+icon_path = "assets/logo.icns" if sys.platform == "darwin" else "assets/logo.ico"
 
 datas = [
     ("frontend/dist", "frontend/dist"),
@@ -60,6 +64,7 @@ exe = EXE(
     a.datas,
     [],
     name="RenewableDataCenter",
+    icon=icon_path,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -73,3 +78,19 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+
+if sys.platform == "darwin":
+    app = BUNDLE(
+        exe,
+        name="RenewableDataCenter.app",
+        icon=icon_path,
+        bundle_identifier="group.seibert.renewable-datacenter",
+        info_plist={
+            "CFBundleName": "Renewable Data Center",
+            "CFBundleDisplayName": "Renewable Data Center",
+            "CFBundleShortVersionString": "2.0.0",
+            "CFBundleVersion": "2.0.0",
+            "LSMinimumSystemVersion": "11.0",
+            "NSHighResolutionCapable": True,
+        },
+    )

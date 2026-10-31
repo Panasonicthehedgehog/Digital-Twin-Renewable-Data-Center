@@ -127,7 +127,7 @@ Open **http://localhost:5173** in your browser.
 ## Architecture 🏛️
 
 ### Frontend – Vite + Leaflet + Chart.js (vanilla JS)
-- Interactive world map (CartoDB Positron basemap)
+- Interactive world map (OpenFreeMap Positron basemap — free, no API key)
 - Renewable-potential heatmap overlay with location ranking
 - Click any location to trigger a live Site Suitability analysis
 - Sliding detail panel with score gauge, KPI chips, energy time series, and mix charts
